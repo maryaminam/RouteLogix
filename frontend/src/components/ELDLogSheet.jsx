@@ -1,11 +1,33 @@
+import { useRef } from "react";
+import LogSheetPdfButton from "./LogSheetPdfButton";
+
+/**
+ * Duty statuses are a categorical scale — identity, not magnitude — so the
+ * hues are assigned in a fixed validated order, never by rank.
+ *
+ * Checked with the dataviz palette validator against the #f5f5f7 grid surface:
+ * chroma floor, lightness band, CVD separation (worst adjacent ΔE 9.2 deutan)
+ * and normal-vision floor (16.3) all pass. The colours these replace put
+ * Driving (#16a34a) and On Duty (#f97316) at ΔE 4.8 under protanopia — a
+ * red-green colourblind driver could not tell them apart on their own log.
+ * Two slots sit below 3:1 against the surface, so the relief rule applies:
+ * every row is direct-labelled and every total is written out in text.
+ */
 const STATUS_ROWS = [
-  { key: "OFF_DUTY", label: "Off Duty", fill: "#f1f5f9", stroke: "#64748b", text: "#0f172a" },
-  { key: "SLEEPER_BERTH", label: "Sleeper Berth", fill: "#f3e8ff", stroke: "#8b5cf6", text: "#3b0764" },
-  { key: "DRIVING", label: "Driving", fill: "#dcfce7", stroke: "#16a34a", text: "#14532d" },
-  { key: "ON_DUTY", label: "On Duty", fill: "#ffedd5", stroke: "#f97316", text: "#7c2d12" },
+  { key: "OFF_DUTY", label: "Off Duty", total: "total_off_duty_hours", stroke: "#2a78d6" },
+  { key: "SLEEPER_BERTH", label: "Sleeper Berth", total: "total_sleeper_berth_hours", stroke: "#4a3aa7" },
+  { key: "DRIVING", label: "Driving", total: "total_driving_hours", stroke: "#1baf7a" },
+  { key: "ON_DUTY", label: "On Duty", total: "total_on_duty_hours", stroke: "#eb6834" },
 ];
 
+const INK = { primary: "#1d1d1f", secondary: "#6e6e73", muted: "#707075" };
+const CHART = { surface: "#f5f5f7", gridline: "#e3e3e8", axis: "#c7c7cc" };
+
 const TIME_SCALE = 24 * 60;
+
+// The axis is dense at 1200px and unreadable once the sheet scales down, so
+// label every other hour. Gridlines still mark every hour.
+const HOUR_LABEL_STEP = 2;
 
 function parseTimeToMinutes(value) {
   if (!value) return 0;
@@ -21,6 +43,23 @@ function formatHourLabel(hour) {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
+/**
+ * "2026-07-07" -> "Tue, Jul 7, 2026", parsed as a local date. Passing the ISO
+ * string to new Date() would read it as UTC midnight and render the previous
+ * day for anyone west of Greenwich.
+ */
+function formatLogDate(value) {
+  const [year, month, day] = String(value || "").split("-").map(Number);
+  if (!year || !month || !day) return value;
+
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function buildStatusMap() {
   return STATUS_ROWS.reduce((accumulator, row, index) => {
     accumulator[row.key] = { ...row, index };
@@ -34,27 +73,66 @@ function formatDuration(hours) {
 
 function getSegmentTooltip(segment, row) {
   const title = segment.label || row.label;
-  return [
+  const lines = [
     title,
     `Status: ${row.label}`,
     `Start: ${segment.start}`,
     `End: ${segment.end}`,
     `Duration: ${formatDuration(segment.hours)}`,
-  ].join("\n");
+  ];
+  if (segment.remark) {
+    lines.push(`Location: ${segment.remark}`);
+  }
+  return lines.join("\n");
+}
+
+function sortByStartTime(segments) {
+  return [...(segments || [])].sort(
+    (left, right) => parseTimeToMinutes(left.start) - parseTimeToMinutes(right.start)
+  );
+}
+
+/** Day number, date and per-status totals — plain HTML so it stays crisp and
+ *  wraps on narrow screens, instead of being baked into the SVG viewBox. */
+function SheetHeader({ log }) {
+  return (
+    <header className="eld-log-sheet__head">
+      <div className="eld-log-sheet__ident">
+        <p className="eld-log-sheet__day">Day {log.day_number}</p>
+        <h3 className="eld-log-sheet__date">{formatLogDate(log.date)}</h3>
+      </div>
+
+      <dl className="eld-log-sheet__totals">
+        {STATUS_ROWS.map((row) => (
+          <div className="eld-log-sheet__total" key={row.key}>
+            <dt>
+              <span
+                className="eld-log-sheet__total-dot"
+                style={{ backgroundColor: row.stroke }}
+                aria-hidden="true"
+              />
+              {row.label}
+            </dt>
+            <dd>{Number(log[row.total] || 0).toFixed(2)}h</dd>
+          </div>
+        ))}
+      </dl>
+    </header>
+  );
 }
 
 function ELDLogSheetSvg({ log }) {
   const statusMap = buildStatusMap();
-  const segments = [...(log.segments || [])].sort(
-    (left, right) => parseTimeToMinutes(left.start) - parseTimeToMinutes(right.start)
-  );
+  const segments = sortByStartTime(log.segments);
 
+  // The SVG now holds only the FMCSA grid, so the top margin just clears the
+  // hour axis rather than a whole header block.
   const width = 1200;
-  const height = 420;
-  const leftMargin = 160;
+  const height = 360;
+  const leftMargin = 150;
   const rightMargin = 28;
-  const topMargin = 78;
-  const bottomMargin = 44;
+  const topMargin = 34;
+  const bottomMargin = 14;
   const chartWidth = width - leftMargin - rightMargin;
   const chartHeight = height - topMargin - bottomMargin;
   const rowHeight = chartHeight / STATUS_ROWS.length;
@@ -70,37 +148,15 @@ function ELDLogSheetSvg({ log }) {
       className="eld-log-sheet__svg"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label={`FMCSA daily log sheet for day ${log.day_number}`}
+      aria-label={`FMCSA duty status grid for day ${log.day_number}`}
     >
-      <rect x="0" y="0" width={width} height={height} rx="20" fill="#ffffff" />
-
-      <text x={leftMargin} y="34" fill="#0f172a" fontSize="18" fontWeight="700">
-        Day {log.day_number} - {log.date}
-      </text>
-      <text x={leftMargin} y="56" fill="#475569" fontSize="12">
-        Driving {log.total_driving_hours}h | On Duty {log.total_on_duty_hours}h | Off Duty {log.total_off_duty_hours}h | Sleeper {log.total_sleeper_berth_hours}h
-      </text>
-
-      <g transform={`translate(${leftMargin}, 24)`}>
-        {STATUS_ROWS.map((row, index) => (
-          <g key={row.key} transform={`translate(${index * 132}, 0)`}>
-            <rect x="0" y="0" width="120" height="20" rx="10" fill={row.fill} stroke={row.stroke} />
-            <circle cx="14" cy="10" r="5" fill={row.stroke} />
-            <text x="24" y="14" fill={row.text} fontSize="10" fontWeight="700">
-              {row.label}
-            </text>
-          </g>
-        ))}
-      </g>
-
       <rect
         x={leftMargin}
         y={topMargin}
         width={chartWidth}
         height={chartHeight}
-        rx="14"
-        fill="#f8fafc"
-        stroke="#cbd5e1"
+        rx="10"
+        fill={CHART.surface}
       />
 
       {STATUS_ROWS.map((row, rowIndex) => {
@@ -109,45 +165,57 @@ function ELDLogSheetSvg({ log }) {
 
         return (
           <g key={row.key}>
-            <rect x="18" y={rowTop} width={leftMargin - 32} height={rowHeight} fill={row.fill} stroke="none" />
-            <text x="30" y={rowMiddle + 5} fill={row.text} fontSize={labelFontSize} fontWeight="700">
+            {/* Swatch + written label: identity never rests on colour alone. */}
+            <rect x="0" y={rowMiddle - 4} width="8" height="8" rx="4" fill={row.stroke} />
+            <text x="18" y={rowMiddle + 5} fill={INK.primary} fontSize={labelFontSize} fontWeight="500">
               {row.label}
             </text>
-            <line
-              x1={leftMargin}
-              y1={rowTop}
-              x2={leftMargin + chartWidth}
-              y2={rowTop}
-              stroke="#dbe4ef"
-              strokeWidth="1"
-            />
+            {rowIndex > 0 && (
+              <line
+                x1={leftMargin}
+                y1={rowTop}
+                x2={leftMargin + chartWidth}
+                y2={rowTop}
+                stroke={CHART.gridline}
+                strokeWidth="1"
+              />
+            )}
           </g>
         );
       })}
 
       {Array.from({ length: 25 }, (_, hour) => {
         const x = timeToX(hour * 60);
-        const labelX = hour === 24 ? x - 6 : x;
+        const isMajor = hour % 6 === 0;
+        const isLabelled = hour % HOUR_LABEL_STEP === 0;
+        // Pin the first and last labels inside the grid so they can't spill
+        // past the edge or collide with each other.
+        const anchor = hour === 0 ? "start" : hour === 24 ? "end" : "middle";
+
         return (
           <g key={hour}>
+            {/* Recessive hairline grid: solid, one shade off the surface. */}
             <line
               x1={x}
               y1={topMargin}
               x2={x}
               y2={topMargin + chartHeight}
-              stroke={hour % 6 === 0 ? "#94a3b8" : "#d4d4d8"}
-              strokeWidth={hour % 6 === 0 ? "1.5" : "1"}
+              stroke={isMajor ? CHART.axis : CHART.gridline}
+              strokeWidth="1"
             />
-            <text
-              x={labelX}
-              y="22"
-              fill="#1e293b"
-              fontSize={hourFontSize}
-              fontWeight={hour % 6 === 0 ? "700" : "500"}
-              textAnchor={hour === 24 ? "end" : "middle"}
-            >
-              {formatHourLabel(hour)}
-            </text>
+            {isLabelled && (
+              <text
+                x={x}
+                y={topMargin - 13}
+                fill={isMajor ? INK.secondary : INK.muted}
+                fontSize={hourFontSize}
+                fontWeight={isMajor ? "600" : "400"}
+                textAnchor={anchor}
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                {formatHourLabel(hour)}
+              </text>
+            )}
           </g>
         );
       })}
@@ -158,46 +226,107 @@ function ELDLogSheetSvg({ log }) {
         const endMinutes = parseTimeToMinutes(segment.end);
         const durationMinutes = Math.max(endMinutes - startMinutes, 0);
         const x = timeToX(startMinutes);
-        const w = Math.max((durationMinutes / TIME_SCALE) * chartWidth, 2);
-        const y = topMargin + row.index * rowHeight + 8;
-        const h = rowHeight - 16;
+        // 2px surface gap between adjacent fills instead of a border around them.
+        const w = Math.max((durationMinutes / TIME_SCALE) * chartWidth - 2, 2);
+        // A thin mark centred in its lane: the FMCSA form draws duty status as
+        // a trace, and a saturated fill this wide would read as a heavy block.
+        const h = 26;
+        const y = topMargin + row.index * rowHeight + (rowHeight - h) / 2;
+
+        // A short block can't hold its caption; letting it render anyway is
+        // what smeared "Required 30-minute break" across the grid. The tooltip
+        // and the remarks row below still carry the detail.
+        const caption = segment.label || row.label;
+        const captionFits = w > caption.length * 6.1 + 20;
 
         const nextSegment = segments[index + 1];
-        const transitionX = index < segments.length - 1 ? timeToX(parseTimeToMinutes(segment.end)) : null;
+        const nextRow = nextSegment ? statusMap[nextSegment.status] : null;
+        const transitionX = timeToX(parseTimeToMinutes(segment.end));
         const shouldDrawTransition =
-          transitionX !== null && nextSegment && nextSegment.status !== segment.status && transitionX < leftMargin + chartWidth;
+          nextRow && nextRow.key !== row.key && transitionX <= leftMargin + chartWidth;
+
+        // The connector joins the two lanes it actually moves between, rather
+        // than ruling the whole grid — a full-height line is indistinguishable
+        // from a gridline and turns a busy day into a picket fence.
+        const laneCentre = (index) => topMargin + index * rowHeight + rowHeight / 2;
 
         return (
           <g key={`${segment.start}-${segment.end}-${index}`} tabIndex="0" aria-label={getSegmentTooltip(segment, row)}>
             <title>{getSegmentTooltip(segment, row)}</title>
-            <rect x={x} y={y} width={w} height={h} rx="7" fill={row.stroke} opacity="0.85" />
-            <text x={x + 8} y={y + h / 2 + 4} fill="#ffffff" fontSize="11" fontWeight="700">
-              {segment.label || row.label}
-            </text>
+            <rect x={x} y={y} width={w} height={h} rx="4" fill={row.stroke} />
+            {captionFits && (
+              <text x={x + 10} y={y + h / 2 + 4} fill="#ffffff" fontSize="11" fontWeight="600">
+                {caption}
+              </text>
+            )}
+            {/* The vertical connector at a duty change is part of the FMCSA
+                trace, so it's a solid rule — dashing reads as "projected". */}
             {shouldDrawTransition && (
               <line
                 x1={transitionX}
-                y1={topMargin + 2}
+                y1={laneCentre(row.index)}
                 x2={transitionX}
-                y2={topMargin + chartHeight - 2}
-                stroke="#475569"
+                y2={laneCentre(nextRow.index)}
+                stroke={INK.muted}
                 strokeWidth="1.5"
-                strokeDasharray="4 3"
               />
             )}
           </g>
         );
       })}
-
-      <line
-        x1={leftMargin}
-        y1={topMargin + chartHeight}
-        x2={leftMargin + chartWidth}
-        y2={topMargin + chartHeight}
-        stroke="#94a3b8"
-        strokeWidth="1"
-      />
     </svg>
+  );
+}
+
+// The FMCSA log form carries a "Remarks" row under the grid naming the
+// city/state of every change of duty status. Segments we synthesise rather than
+// observe (off-duty padding, midnight continuations) carry no remark.
+function RemarksRow({ log }) {
+  const statusMap = buildStatusMap();
+  const entries = sortByStartTime(log.segments).filter((segment) => segment.remark);
+
+  if (!entries.length) {
+    return null;
+  }
+
+  return (
+    <div className="eld-log-sheet__remarks">
+      <h4 className="eld-log-sheet__remarks-title">Remarks</h4>
+      <ol className="eld-log-sheet__remarks-list">
+        {entries.map((segment, index) => {
+          const row = statusMap[segment.status] || statusMap.OFF_DUTY;
+          return (
+            <li className="eld-log-sheet__remark" key={`${segment.start}-${index}`}>
+              <span className="eld-log-sheet__remark-swatch" style={{ backgroundColor: row.stroke }} aria-hidden="true" />
+              <span className="eld-log-sheet__remark-time">{segment.start}</span>
+              <span className="eld-log-sheet__remark-place">{segment.remark}</span>
+              <span className="eld-log-sheet__remark-label">{segment.label || row.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function LogSheetCard({ log }) {
+  // The PDF captures this whole card — grid plus the date and remarks that make
+  // it a readable log sheet rather than an unlabelled chart.
+  const cardRef = useRef(null);
+
+  return (
+    <div className="eld-log-sheet__sheet">
+      <LogSheetPdfButton log={log} targetRef={cardRef} />
+      <section className="eld-log-sheet__card" ref={cardRef}>
+        <SheetHeader log={log} />
+        {/* Below ~620px the grid scrolls sideways instead of scaling down
+            until the hour labels are unreadable. */}
+        <div className="eld-log-sheet__grid">
+          <ELDLogSheetSvg log={log} />
+        </div>
+        <RemarksRow log={log} />
+      </section>
+    </div>
   );
 }
 
@@ -210,18 +339,8 @@ export default function ELDLogSheet({ log, logs }) {
 
   return (
     <div className="eld-log-sheet" aria-label="Daily log sheets">
-      <div className="eld-log-sheet__legend" aria-label="Duty status legend">
-        {STATUS_ROWS.map((row) => (
-          <div className="eld-log-sheet__legend-item" key={row.key}>
-            <span className="eld-log-sheet__legend-swatch" style={{ backgroundColor: row.stroke }} aria-hidden="true" />
-            <span>{row.label}</span>
-          </div>
-        ))}
-      </div>
       {sheets.map((sheet) => (
-        <section className="eld-log-sheet__card" key={`${sheet.day_number}-${sheet.date}`}>
-          <ELDLogSheetSvg log={sheet} />
-        </section>
+        <LogSheetCard log={sheet} key={`${sheet.day_number}-${sheet.date}`} />
       ))}
     </div>
   );

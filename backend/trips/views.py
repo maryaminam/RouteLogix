@@ -1,16 +1,19 @@
+import hashlib
 from datetime import datetime
 
 from django.conf import settings
+from django.core.cache import cache
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
 from .serializers import TripRequestSerializer, TripSerializer
 from .models import Trip, LogSheet
-from .services.geocoding import geocode, GeocodingError
+from .services.geocoding import geocode, search_locations, GeocodingError
 from .services.routing import get_route, RoutingError
 from .services.hos_engine import HOSEngine
 from .services.daily_split import split_into_days
+from .services.route_locations import RouteLocator
 
 
 class TripPlanView(APIView):
@@ -47,11 +50,12 @@ class TripPlanView(APIView):
             start_time=datetime.now().replace(second=0, microsecond=0),
             cycle_used_hours=data["current_cycle_used_hours"],
         )
-        segments = engine.plan(
-            total_driving_hours=route["duration_hours"],
-            distance_miles=route["distance_miles"],
-        )
-        days = split_into_days(segments)
+        segments = engine.plan(route["legs"])
+        # Reverse-geocodes each duty-status change to a city/state for the log
+        # sheet remarks. Scoped to this request so its cache lives and dies with
+        # the trip it was built for.
+        locator = RouteLocator(route["legs"])
+        days = split_into_days(segments, locate=locator.locate)
 
         trip = Trip.objects.create(
             current_location=data["current_location"],
@@ -83,6 +87,48 @@ class TripPlanView(APIView):
             )
 
         return Response(TripSerializer(trip).data, status=status.HTTP_201_CREATED)
+
+
+class LocationSearchView(APIView):
+    """
+    GET /api/locations/search/?q=<partial>
+
+    Typeahead suggestions for the trip form's location fields.
+
+    Every miss costs a call to Nominatim, which throttles this process to about
+    one request per second and blocks bursty traffic outright. So results are
+    cached aggressively — place names are stable, and a user typing "omaha"
+    walks through prefixes that other users will type too.
+    """
+
+    def get(self, request):
+        query = (request.query_params.get("q") or "").strip()
+
+        if len(query) < settings.LOCATION_SEARCH_MIN_QUERY_LENGTH:
+            return Response({"results": [], "query": query})
+
+        # Hash rather than interpolate: the raw query is user input and would
+        # otherwise land in cache keys containing spaces and control characters.
+        digest = hashlib.sha256(query.casefold().encode("utf-8")).hexdigest()[:32]
+        cache_key = f"location-search:{digest}"
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"results": cached, "query": query, "cached": True})
+
+        try:
+            results = search_locations(query)
+        except GeocodingError as exc:
+            # The field still accepts free text, so this degrades rather than
+            # blocks — say so plainly instead of returning an empty list, which
+            # the UI would otherwise render as "no matches".
+            return Response(
+                {"detail": str(exc), "results": []},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        cache.set(cache_key, results, settings.LOCATION_SEARCH_CACHE_SECONDS)
+        return Response({"results": results, "query": query, "cached": False})
 
 
 class TripDetailView(APIView):

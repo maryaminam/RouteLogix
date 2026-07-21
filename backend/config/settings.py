@@ -132,6 +132,22 @@ NOMINATIM_USER_AGENT = config("NOMINATIM_USER_AGENT", default="ELDTripPlannerApp
 # Nominatim with no key.
 GEOCODING_API_KEY = config("GEOCODING_API_KEY", default="")
 
+# Location autocomplete. Nominatim matches whole words only ("denv" finds
+# nothing useful), so suggestions come from Photon, the OSM project's
+# purpose-built typeahead engine. Nominatim stays the authority for actually
+# resolving a chosen location, and is the fallback if Photon is unreachable.
+# Set to blank to skip Photon entirely and use Nominatim for suggestions too.
+PHOTON_BASE_URL = config("PHOTON_BASE_URL", default="https://photon.komoot.io")
+# Results are cached hard regardless of provider: place names don't move, and
+# both services are free instances we shouldn't hammer on every keystroke.
+LOCATION_SEARCH_MIN_QUERY_LENGTH = config("LOCATION_SEARCH_MIN_QUERY_LENGTH", default=3, cast=int)
+LOCATION_SEARCH_LIMIT = config("LOCATION_SEARCH_LIMIT", default=6, cast=int)
+LOCATION_SEARCH_CACHE_SECONDS = config("LOCATION_SEARCH_CACHE_SECONDS", default=60 * 60 * 24, cast=int)
+# Restricts suggestions to one or more ISO country codes. Defaults to US since
+# the HOS ruleset and "City, ST" log remarks are FMCSA-specific; blank to allow
+# anywhere (useful for cross-border runs).
+LOCATION_SEARCH_COUNTRY_CODES = config("LOCATION_SEARCH_COUNTRY_CODES", default="us")
+
 HOS_RULESET = {
     "MAX_DRIVING_HOURS": 11,
     "MAX_DUTY_WINDOW_HOURS": 14,

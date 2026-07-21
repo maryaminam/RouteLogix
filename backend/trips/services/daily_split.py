@@ -13,19 +13,32 @@ def _midnight_after(dt: datetime) -> datetime:
     return datetime(dt.year, dt.month, dt.day) + timedelta(days=1)
 
 
-def split_into_days(segments: list[Segment]) -> list[dict]:
+def split_into_days(segments: list[Segment], locate=None) -> list[dict]:
     """
     Returns a list of day dicts:
         {
             "day_number": int,
             "date": date,
-            "segments": [{"status", "start" (HH:MM), "end" (HH:MM), "hours"}],
+            "segments": [{"status", "start" (HH:MM), "end" (HH:MM), "hours",
+                          "label", "remark"}],
             "totals": {"OFF_DUTY": float, "SLEEPER_BERTH": float,
                        "DRIVING": float, "ON_DUTY": float}
         }
+
+    `locate` is an optional callable taking (leg_index, miles_into_leg) and
+    returning a "City, ST" string — typically RouteLocator.locate. When
+    supplied, every genuine change of duty status gets a "remark" naming where
+    it happened, as the FMCSA log form requires. Segments we synthesise
+    ourselves (off-duty padding, and the tail of a segment that ran past
+    midnight) are not status changes, so they carry an empty remark.
     """
     if not segments:
         return []
+
+    def remark_for(seg: Segment) -> str:
+        if locate is None:
+            return ""
+        return locate(seg.leg_index, seg.miles_into_leg)
 
     days = []
     day_number = 1
@@ -44,7 +57,7 @@ def split_into_days(segments: list[Segment]) -> list[dict]:
             })
         day_number += 1
 
-    def _append(status, start, end, label=""):
+    def _append(status, start, end, label="", remark=""):
         nonlocal current_segments, totals
         hours = (end - start).total_seconds() / 3600
         if hours <= 0:
@@ -55,6 +68,7 @@ def split_into_days(segments: list[Segment]) -> list[dict]:
             "start": start.strftime("%H:%M"),
             "end": "24:00" if end.hour == 0 and end.minute == 0 and end > start else end.strftime("%H:%M"),
             "hours": round(hours, 2),
+            "remark": remark,
         })
         totals[status] += hours
 
@@ -68,6 +82,9 @@ def split_into_days(segments: list[Segment]) -> list[dict]:
     for seg in segments:
         seg_start = seg.start
         seg_end = seg.end
+        # Only the first piece of a segment marks the actual status change; if
+        # it spills past midnight the remainder is a continuation, not a change.
+        pending_remark = remark_for(seg)
 
         while seg_start < seg_end:
             boundary = _midnight_after(seg_start)
@@ -95,8 +112,10 @@ def split_into_days(segments: list[Segment]) -> list[dict]:
                 "start": seg_start.strftime("%H:%M"),
                 "end": piece_end.strftime("%H:%M") if piece_end.hour != 0 or piece_end.minute != 0 or piece_end == seg_start else "24:00",
                 "hours": round(hours, 2),
+                "remark": pending_remark,
             })
             totals[seg.status] += hours
+            pending_remark = ""
 
             seg_start = piece_end
 

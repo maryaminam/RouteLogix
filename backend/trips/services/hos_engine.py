@@ -28,6 +28,14 @@ class Segment:
     start: datetime
     end: datetime
     label: str = ""  # e.g. "Driving", "Fuel stop", "Pickup", "30-min break"
+    # Where the driver was when this segment began, expressed as a route leg
+    # plus how far into that leg they had travelled. We have no live GPS feed,
+    # so this is what lets the caller estimate the location of a status change.
+    # It is kept per-leg rather than as one trip-wide mileage so that the
+    # pickup and drop-off land exactly on their waypoints instead of drifting
+    # by the difference between road distance and polyline distance.
+    leg_index: int = 0
+    miles_into_leg: float = 0.0
 
     @property
     def hours(self) -> float:
@@ -53,20 +61,34 @@ class HOSEngine:
         self.clock = DriverClock(duty_window_start=start_time, cycle_used=cycle_used_hours)
         self.now = start_time
 
+        # Position along the route: which leg we're on, and how far into it.
+        self.leg_index = 0
+        self.miles_into_leg = 0.0
+        self._miles_before_leg = 0.0  # total mileage of all legs already completed
+        self.miles_per_driving_hour = ruleset["AVERAGE_DRIVING_SPEED_MPH"]  # per-leg, set in _drive()
+
     # -- internal helpers ----------------------------------------------------
+
+    @property
+    def miles_driven(self) -> float:
+        """Total miles driven across the whole trip so far, spanning all legs."""
+        return self._miles_before_leg + self.miles_into_leg
 
     def _add(self, status: str, hours: float, label: str = ""):
         if hours <= 0:
             return
         start = self.now
         end = start + timedelta(hours=hours)
-        self.segments.append(Segment(status, start, end, label))
+        self.segments.append(
+            Segment(status, start, end, label, self.leg_index, self.miles_into_leg)
+        )
         self.now = end
 
         if status == "DRIVING":
             self.clock.driving_today += hours
             self.clock.driving_since_break += hours
             self.clock.cycle_used += hours
+            self.miles_into_leg += hours * self.miles_per_driving_hour
         elif status == "ON_DUTY":
             self.clock.cycle_used += hours
         # OFF_DUTY / SLEEPER_BERTH accrue no driving/duty hours
@@ -85,17 +107,27 @@ class HOSEngine:
     def _duty_window_elapsed(self) -> float:
         return (self.now - self.clock.duty_window_start).total_seconds() / 3600
 
-    # -- public API ------------------------------------------------------
+    def _drive_leg(self, leg: dict):
+        """
+        Drives one route leg to completion, stopping for every HOS interrupt
+        that comes due along the way.
 
-    def plan(self, total_driving_hours: float, distance_miles: float) -> list[Segment]:
+        The duty clocks are *not* touched at leg boundaries: the pickup between
+        the two legs is on-duty time, not a reset, so the 11-hour limit, the
+        14-hour window, the 30-minute break trigger and the fuel interval all
+        carry straight over from the previous leg.
+        """
         r = self.r
+        driving_remaining = leg["duration_hours"]
 
-        # 1. Pickup — 1 hour on-duty, not driving
-        self._add("ON_DUTY", r["PICKUP_DURATION_HOURS"], label="Pickup")
-
-        driving_remaining = total_driving_hours
-        miles_remaining = distance_miles
-        avg_speed = r["AVERAGE_DRIVING_SPEED_MPH"]
+        # Convert driving time to route mileage using this leg's own average
+        # speed rather than the ruleset's nominal one, so that mileage markers
+        # line up with the real geometry instead of drifting from it.
+        self.miles_per_driving_hour = (
+            leg["distance_miles"] / driving_remaining
+            if driving_remaining > 0
+            else r["AVERAGE_DRIVING_SPEED_MPH"]
+        )
 
         while driving_remaining > 1e-6:
             # Hard stop: cycle limit reached -> must restart (34 consecutive hrs off)
@@ -122,11 +154,7 @@ class HOSEngine:
                 continue
 
             # Fuel stop every FUEL_INTERVAL_MILES
-            miles_driven_so_far = distance_miles - miles_remaining
-            if miles_driven_so_far > 0 and miles_driven_so_far % r["FUEL_INTERVAL_MILES"] < 1e-6:
-                pass  # handled via the interval check below instead
-
-            next_fuel_at = r["FUEL_INTERVAL_MILES"] - (miles_driven_so_far % r["FUEL_INTERVAL_MILES"])
+            next_fuel_at = r["FUEL_INTERVAL_MILES"] - (self.miles_driven % r["FUEL_INTERVAL_MILES"])
             miles_to_next_fuel = next_fuel_at if next_fuel_at > 0 else r["FUEL_INTERVAL_MILES"]
 
             # How much driving time is available before hitting each constraint?
@@ -134,7 +162,7 @@ class HOSEngine:
             hrs_to_window_limit = r["MAX_DUTY_WINDOW_HOURS"] - self._duty_window_elapsed()
             hrs_to_break = r["DRIVING_BREAK_TRIGGER_HOURS"] - self.clock.driving_since_break
             hrs_to_cycle_limit = r["MAX_CYCLE_HOURS"] - self.clock.cycle_used
-            hrs_to_fuel = miles_to_next_fuel / avg_speed
+            hrs_to_fuel = miles_to_next_fuel / self.miles_per_driving_hour
             hrs_to_finish = driving_remaining
 
             drive_chunk = min(
@@ -154,14 +182,47 @@ class HOSEngine:
 
             self._add("DRIVING", drive_chunk, label="Driving")
             driving_remaining -= drive_chunk
-            miles_remaining -= drive_chunk * avg_speed
 
             # If we just hit the fuel threshold exactly, take the fuel stop
-            miles_driven_so_far = distance_miles - miles_remaining
-            if abs((miles_driven_so_far % r["FUEL_INTERVAL_MILES"])) < 1e-3 and driving_remaining > 1e-6:
+            if abs((self.miles_driven % r["FUEL_INTERVAL_MILES"])) < 1e-3 and driving_remaining > 1e-6:
                 self._add("ON_DUTY", r["FUEL_STOP_DURATION_HOURS"], label="Fuel stop")
 
-        # Drop-off — 1 hour on-duty, not driving
+    def _advance_to_next_leg(self, leg: dict):
+        """Moves the position marker onto the start of the following leg."""
+        self._miles_before_leg += leg["distance_miles"]
+        self.miles_into_leg = 0.0
+        self.leg_index += 1
+
+    # -- public API ------------------------------------------------------
+
+    def plan(self, legs: list[dict]) -> list[Segment]:
+        """
+        Simulates the trip over the two route legs returned by
+        routing.get_route(): current -> pickup, then pickup -> dropoff.
+
+        Each leg is {"distance_miles": float, "duration_hours": float}.
+        """
+        if len(legs) != 2:
+            raise ValueError(
+                f"Expected 2 route legs (current->pickup, pickup->dropoff), got {len(legs)}."
+            )
+
+        r = self.r
+        current_to_pickup, pickup_to_dropoff = legs
+
+        # 1. Deadhead out to the shipper.
+        self._drive_leg(current_to_pickup)
+
+        # 2. Pickup — 1 hour on-duty, not driving. Advancing the leg first puts
+        #    this segment at the pickup waypoint rather than back at mile zero.
+        self._advance_to_next_leg(current_to_pickup)
+        self._add("ON_DUTY", r["PICKUP_DURATION_HOURS"], label="Pickup")
+
+        # 3. Run the load to the consignee.
+        self._drive_leg(pickup_to_dropoff)
+
+        # 4. Drop-off — 1 hour on-duty. We stay on the final leg, whose mileage
+        #    is now fully consumed, so this lands on the dropoff waypoint.
         self._add("ON_DUTY", r["DROPOFF_DURATION_HOURS"], label="Drop-off")
 
         return self.segments
@@ -186,7 +247,7 @@ class HOSEngine:
 
 
 def plan_trip(ruleset: dict, start_time: datetime, cycle_used_hours: float,
-              total_driving_hours: float, distance_miles: float) -> list[Segment]:
+              legs: list[dict]) -> list[Segment]:
     """Convenience entrypoint used by the API view."""
     engine = HOSEngine(ruleset, start_time, cycle_used_hours)
-    return engine.plan(total_driving_hours, distance_miles)
+    return engine.plan(legs)

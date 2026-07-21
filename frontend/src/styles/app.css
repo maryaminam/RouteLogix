@@ -1,86 +1,448 @@
-/* Placeholder base styles — will be expanded with real design pass */
+/* ==========================================================================
+   RouteLogix design system
+   Typography and surface language follow Apple's: a tightly-tracked sans,
+   near-black ink on near-white planes, restrained colour, hairline borders
+   and very soft elevation instead of the heavy drop shadows and gradients
+   this file used to carry.
+   ========================================================================== */
+
+:root {
+	/* -- Ink ------------------------------------------------------------- */
+	/* Contrast measured, not eyeballed. Apple's own #86868b muted grey is only
+	   3.6:1 on white and 3.3:1 on the sunken surface — under WCAG AA for normal
+	   text, and these tokens carry real copy (tile labels, captions, hints).
+	   --ink-3 is the lightest neutral still clearing 4.5:1 on *every* surface
+	   here, sunken included, since that's where the stat-tile labels sit. */
+	--ink-1: #1d1d1f;   /* primary text        16.8:1 on white */
+	--ink-2: #6e6e73;   /* secondary text       5.1:1 on white, 4.7:1 on sunken */
+	--ink-3: #707075;   /* muted: labels, hints 4.9:1 on white, 4.5:1 on sunken */
+
+	/* -- Surfaces -------------------------------------------------------- */
+	--surface-page: #fbfbfd;
+	--surface-card: #ffffff;
+	--surface-sunken: #f5f5f7;
+	--hairline: #d2d2d7;
+	--hairline-soft: #e8e8ed;
+
+	/* -- Accent ---------------------------------------------------------- */
+	--accent: #0071e3;
+	--accent-hover: #0077ed;
+	--accent-quiet: #e8f2fd;
+
+	/* -- Status (reserved; never reused as a series colour) -------------- */
+	--status-good: #0ca30c;
+	--status-good-ink: #0a7a0a;
+	--status-warning: #fab219;
+	--status-warning-ink: #8a5d00;
+	--status-critical: #d03b3b;
+	--status-critical-ink: #b3261e;
+
+	/* -- Duty status, categorical -----------------------------------------
+	   Validated with the dataviz palette checker against the #f5f5f7 grid
+	   surface: chroma floor, lightness band, CVD separation (worst adjacent
+	   ΔE 9.2 deutan) and normal-vision floor (16.3) all pass. The previous
+	   green/orange pair measured ΔE 4.8 for protanopes — indistinguishable
+	   for red-green colourblind readers, on a compliance document.
+	   Contrast sits under 3:1 for two slots, so the relief rule applies:
+	   every row is direct-labelled and every total is written out. */
+	--duty-off: #2a78d6;
+	--duty-sleeper: #4a3aa7;
+	--duty-driving: #1baf7a;
+	--duty-on: #eb6834;
+
+	/* -- Radii ----------------------------------------------------------- */
+	--r-sm: 8px;
+	--r-md: 12px;
+	--r-lg: 18px;
+	--r-xl: 22px;
+	--r-pill: 980px;
+
+	/* -- Elevation ------------------------------------------------------- */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+	--shadow-md: 0 4px 20px rgba(0, 0, 0, 0.06);
+
+	/* -- Spacing (4px base) ---------------------------------------------- */
+	--s-1: 0.25rem;
+	--s-2: 0.5rem;
+	--s-3: 0.75rem;
+	--s-4: 1rem;
+	--s-5: 1.5rem;
+	--s-6: 2rem;
+	--s-7: 3rem;
+
+	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+		"Inter Variable", "Inter", "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: linear-gradient(180deg, #eef2f7 0%, #f8fafc 100%); color: #0f172a; overflow-x: hidden; }
-.home-page { max-width: 1320px; margin: 0 auto; padding: 2rem 1.25rem 2.5rem; }
-header { margin-bottom: 1.25rem; }
-header h1 { margin: 0 0 0.35rem; font-size: clamp(1.9rem, 4vw, 3rem); letter-spacing: -0.03em; }
-header p { margin: 0; max-width: 68ch; color: #475569; line-height: 1.55; }
-.trip-form { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); background: linear-gradient(180deg, #ffffff, #fbfdff); padding: 1.35rem; border-radius: 18px; box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08); margin: 1.5rem 0 1.15rem; border: 1px solid #e2e8f0; }
-.trip-form label { display: flex; flex-direction: column; font-size: 0.85rem; gap: 0.35rem; color: #334155; }
-.trip-form input { padding: 0.78rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 12px; font: inherit; background: #fff; color: #0f172a; }
-.trip-form input:focus { outline: 3px solid rgba(37, 99, 235, 0.18); border-color: #2563eb; }
-.trip-form button { grid-column: span 2; padding: 0.9rem 1rem; border: none; border-radius: 12px; background: linear-gradient(135deg, #1d4ed8, #2563eb); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22); }
-.trip-form button:disabled { opacity: 0.72; cursor: not-allowed; }
-.error { color: #b91c1c; margin: 0.5rem 0 0; }
-.results { display: flex; flex-direction: column; gap: 1rem; }
-.results--dashboard { align-items: stretch; width: 100%; }
-.results--dashboard > * { width: 100%; min-width: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+	margin: 0;
+	font-family: var(--font-sans);
+	font-size: 1.0625rem;      /* 17px, Apple's body size */
+	line-height: 1.5;
+	background: var(--surface-page);
+	color: var(--ink-1);
+	overflow-x: hidden;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
+
+:where(a) { color: var(--accent); }
+
+/* Consistent, visible focus for keyboard users on every interactive thing. */
+:where(a, button, input, [tabindex]):focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: var(--r-sm);
+}
+
+.visually-hidden {
+	position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+	overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ==========================================================================
+   Page shell
+   ========================================================================== */
+
+.home-page { max-width: 1120px; margin: 0 auto; padding: var(--s-7) var(--s-5) var(--s-7); }
+
+.home-page > header { margin-bottom: var(--s-6); }
+.home-page > header h1 {
+	margin: 0 0 var(--s-2);
+	font-size: clamp(2.25rem, 5vw, 3.25rem);
+	line-height: 1.05;
+	letter-spacing: -0.035em;
+	font-weight: 700;
+}
+.home-page > header p { margin: 0; max-width: 60ch; color: var(--ink-2); font-size: 1.1875rem; line-height: 1.45; }
+
+/* Shared card surface. */
 .hos-status-card,
 .trip-summary-card,
 .route-map-card,
 .eld-log-sheet__card,
-.logs-panel { border: 1px solid #dbe4ee; border-radius: 20px; background: #fff; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08); }
-.hos-status-card,
-.trip-summary-card { padding: 1.25rem; }
-.hos-status-card { color: #fff; background: linear-gradient(135deg, #0f172a, #111827 55%, #1f2937); }
-.hos-status-card--good { background: linear-gradient(135deg, #052e16, #064e3b 55%, #0f766e); }
-.hos-status-card--warning { background: linear-gradient(135deg, #431407, #9a3412 55%, #b45309); }
-.hos-status-card__header,
-.trip-summary-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-.hos-status-card__eyebrow,
-.trip-summary-card__eyebrow { margin: 0 0 0.3rem; text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; opacity: 0.78; }
-.hos-status-card h2,
-.trip-summary-card h2 { margin: 0; font-size: 1.15rem; line-height: 1.2; }
-.hos-status-card__description { margin: 0.35rem 0 0; color: rgba(255, 255, 255, 0.88); }
-.hos-status-card__badge { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px; background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.18); font-size: 1.6rem; font-weight: 800; flex: 0 0 auto; }
-.hos-status-card__grid,
-.trip-summary-card__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; }
-.hos-status-card__metric,
-.trip-summary-card__item { min-height: 92px; padding: 0.95rem; border-radius: 16px; display: flex; flex-direction: column; justify-content: space-between; }
-.hos-status-card__metric { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.14); }
-.trip-summary-card__item { background: linear-gradient(180deg, #f8fbff, #eef4fb); border: 1px solid #dbe7f2; }
-.hos-status-card__metric span,
-.trip-summary-card__item span { display: block; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.78; margin-bottom: 0.35rem; }
-.hos-status-card__metric strong,
-.trip-summary-card__item strong { font-size: 1.1rem; line-height: 1.35; }
-.hos-status-card__metric strong { color: #fff; }
-.trip-summary-card { color: #0f172a; background: linear-gradient(180deg, #ffffff, #fbfdff); }
-.trip-summary-card__grid--compact { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.route-map-card { overflow: hidden; }
-.route-map-card__map { height: 520px; min-height: 520px; border-radius: 20px 20px 0 0; overflow: hidden; }
-.map-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #64748b; padding: 1rem; text-align: center; }
-.logs-panel { display: flex; flex-direction: column; gap: 0.9rem; padding: 1rem; background: linear-gradient(180deg, #ffffff, #fbfdff); max-height: 780px; overflow-y: auto; }
-.eld-log-sheet { display: flex; flex-direction: column; gap: 0.9rem; }
-.eld-log-sheet__legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 0.5rem; padding: 0.25rem 0 0.15rem; }
-.eld-log-sheet__legend-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.65rem 0.75rem; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0; color: #334155; font-size: 0.84rem; }
-.eld-log-sheet__legend-swatch { width: 12px; height: 12px; border-radius: 999px; flex: 0 0 auto; }
-.eld-log-sheet__card { padding: 0.85rem; overflow: hidden; }
-.eld-log-sheet__svg { display: block; width: 100%; height: auto; }
-.leaflet-container { height: 100%; width: 100%; }
-.route-marker { display: grid !important; place-items: center; color: #fff; border-radius: 999px; border: 2px solid rgba(255,255,255,0.9); box-shadow: 0 10px 20px rgba(15, 23, 42, 0.25); font-size: 0.75rem; font-weight: 800; }
-.route-marker span { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-.route-marker--current { background: linear-gradient(135deg, #0f172a, #334155); }
-.route-marker--pickup { background: linear-gradient(135deg, #166534, #22c55e); }
-.route-marker--dropoff { background: linear-gradient(135deg, #7f1d1d, #ef4444); }
-.route-marker--fuel { background: linear-gradient(135deg, #92400e, #f59e0b); }
-.route-marker--rest { background: linear-gradient(135deg, #6d28d9, #a855f7); }
-.route-marker.leaflet-interactive { cursor: pointer; }
-
-@media (min-width: 900px) {
-	.results--dashboard { gap: 1.1rem; }
-	.results--dashboard > * { width: 100%; }
-	.logs-panel { max-height: 820px; }
+.state-card,
+.skeleton__card,
+.trip-form {
+	background: var(--surface-card);
+	border: 1px solid var(--hairline-soft);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-sm);
 }
 
+.card-eyebrow,
+.hos-status-card__eyebrow,
+.trip-summary-card__eyebrow,
+.eld-log-sheet__day,
+.eld-log-sheet__remarks-title {
+	margin: 0 0 var(--s-1);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+/* ==========================================================================
+   Trip form
+   ========================================================================== */
+
+.trip-form {
+	display: grid;
+	gap: var(--s-4) var(--s-5);
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	padding: var(--s-5);
+	margin: 0 0 var(--s-5);
+}
+.trip-form label,
+.autocomplete { display: flex; flex-direction: column; gap: var(--s-2); font-size: 0.8125rem; font-weight: 500; color: var(--ink-2); }
+
+.trip-form input {
+	padding: 0.72rem 0.9rem;
+	border: 1px solid var(--hairline);
+	border-radius: var(--r-md);
+	font: inherit;
+	font-size: 1rem;
+	font-weight: 400;
+	background: var(--surface-card);
+	color: var(--ink-1);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.trip-form input::placeholder { color: var(--ink-3); }
+.trip-form input:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 4px var(--accent-quiet);
+}
+.trip-form input[aria-invalid="true"] { border-color: var(--status-critical); }
+.trip-form input[aria-invalid="true"]:focus { box-shadow: 0 0 0 4px rgba(208, 59, 59, 0.12); }
+
+.field-error { color: var(--status-critical-ink); font-size: 0.8125rem; font-weight: 400; line-height: 1.35; }
+
+.trip-form__actions { grid-column: span 2; display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+.trip-form__hint { margin: 0; color: var(--ink-3); font-size: 0.875rem; font-weight: 400; }
+
+/* Apple's pill button. */
+.trip-form button[type="submit"] {
+	padding: 0.7rem 1.4rem;
+	border: none;
+	border-radius: var(--r-pill);
+	background: var(--accent);
+	color: #fff;
+	font: inherit;
+	font-size: 1rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.trip-form button[type="submit"]:hover:not(:disabled) { background: var(--accent-hover); }
+.trip-form button[type="submit"]:active:not(:disabled) { transform: scale(0.98); }
+.trip-form button[type="submit"]:disabled { background: var(--hairline); color: #fff; cursor: not-allowed; }
+
+/* ==========================================================================
+   Location autocomplete
+   ========================================================================== */
+
+.autocomplete__control { position: relative; display: flex; flex-direction: column; }
+.autocomplete__control input { width: 100%; padding-right: 2.4rem; }
+.autocomplete__spinner {
+	position: absolute; right: 0.9rem; top: 50%; margin-top: -8px;
+	width: 16px; height: 16px; border-radius: 50%;
+	border: 2px solid var(--hairline); border-top-color: var(--accent);
+	animation: spin 0.7s linear infinite; pointer-events: none;
+}
+.autocomplete__panel {
+	position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
+	margin: 0; padding: var(--s-1); list-style: none;
+	background: var(--surface-card);
+	border: 1px solid var(--hairline);
+	border-radius: var(--r-md);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+	max-height: 288px; overflow-y: auto;
+}
+.autocomplete__option {
+	display: flex; flex-direction: column; gap: 1px;
+	padding: 0.5rem 0.65rem; border-radius: var(--r-sm); cursor: pointer;
+}
+.autocomplete__option.is-active { background: var(--surface-sunken); }
+.autocomplete__option-value { font-size: 0.9375rem; font-weight: 500; color: var(--ink-1); }
+.autocomplete__option-context { font-size: 0.8125rem; font-weight: 400; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.autocomplete__note { padding: 0.6rem 0.65rem; font-size: 0.875rem; font-weight: 400; color: var(--ink-2); line-height: 1.45; }
+
+/* ==========================================================================
+   Results dashboard
+   ========================================================================== */
+
+.results { display: flex; flex-direction: column; gap: var(--s-5); }
+.results--dashboard > * { width: 100%; min-width: 0; }
+
+/* -- Compliance status card ------------------------------------------------
+   Was a full-bleed dark gradient. Now a white card whose state is carried by
+   an icon + written label + a colour accent, never colour alone. */
+.hos-status-card { padding: var(--s-5); }
+.hos-status-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-5); }
+.hos-status-card h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.025em; }
+.hos-status-card__description { margin: var(--s-2) 0 0; color: var(--ink-2); max-width: 62ch; }
+
+.hos-status-card__badge {
+	display: grid; place-items: center; flex: 0 0 auto;
+	width: 44px; height: 44px; border-radius: 50%;
+	font-size: 1.25rem; font-weight: 700; color: #fff;
+	background: var(--status-good);
+}
+.hos-status-card--warning .hos-status-card__badge { background: var(--status-warning); color: var(--ink-1); }
+.hos-status-card--good h2 { color: var(--status-good-ink); }
+.hos-status-card--warning h2 { color: var(--status-warning-ink); }
+
+/* -- Stat tiles (shared by status + summary cards) ------------------------- */
+/* Self-contained tiles rather than a 1px-gap grid over a tinted background:
+   that trick leaves phantom grey cells whenever the last row is short. */
+.hos-status-card__grid,
+.trip-summary-card__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+	gap: var(--s-3);
+}
+.hos-status-card__metric,
+.trip-summary-card__item {
+	display: flex; flex-direction: column; gap: var(--s-2);
+	/* Values sit on a common baseline even where a label wraps to two lines. */
+	justify-content: space-between;
+	padding: var(--s-4);
+	background: var(--surface-sunken);
+	border-radius: var(--r-lg);
+	min-height: 92px;
+}
+.hos-status-card__metric span,
+.trip-summary-card__item span {
+	font-size: 0.75rem; font-weight: 500; letter-spacing: 0.02em;
+	text-transform: uppercase; color: var(--ink-3);
+}
+/* Proportional figures: tabular-nums makes standalone values look loose. */
+.hos-status-card__metric strong,
+.trip-summary-card__item strong {
+	font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em;
+	line-height: 1.15; color: var(--ink-1);
+}
+
+.trip-summary-card { padding: var(--s-5); }
+.trip-summary-card__header { margin-bottom: var(--s-5); }
+.trip-summary-card h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.025em; }
+
+/* -- Map ------------------------------------------------------------------- */
+.route-map-card { overflow: hidden; padding: 0; }
+.route-map-card__map { height: 460px; min-height: 460px; }
+.map-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-3); padding: var(--s-4); text-align: center; }
+.leaflet-container { height: 100%; width: 100%; font-family: var(--font-sans); }
+
+.route-marker {
+	display: grid !important; place-items: center; color: #fff; border-radius: 50%;
+	border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+	font-size: 0.75rem; font-weight: 700;
+}
+.route-marker span { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+.route-marker--current { background: var(--ink-1); }
+.route-marker--pickup { background: var(--duty-driving); }
+.route-marker--dropoff { background: var(--status-critical); }
+.route-marker--fuel { background: var(--duty-on); }
+.route-marker--rest { background: var(--duty-sleeper); }
+.route-marker.leaflet-interactive { cursor: pointer; }
+
+/* -- Logs panel ------------------------------------------------------------ */
+.logs-panel { display: flex; flex-direction: column; gap: var(--s-5); }
+
+/* ==========================================================================
+   Daily log sheets
+   ========================================================================== */
+
+.eld-log-sheet { display: flex; flex-direction: column; gap: var(--s-5); }
+.eld-log-sheet__sheet { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.eld-log-sheet__card { padding: var(--s-5); overflow: hidden; }
+
+.eld-log-sheet__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-5); }
+.eld-log-sheet__ident { min-width: 0; }
+.eld-log-sheet__date { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }
+
+/* Doubles as the chart legend: swatch + written label + value, so status
+   identity never rests on colour alone. */
+.eld-log-sheet__totals { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0; }
+.eld-log-sheet__total { display: flex; align-items: baseline; gap: var(--s-2); }
+.eld-log-sheet__total dt { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.8125rem; color: var(--ink-2); }
+.eld-log-sheet__total dd { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--ink-1); }
+.eld-log-sheet__total-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.eld-log-sheet__total + .eld-log-sheet__total { padding-left: var(--s-2); border-left: 1px solid var(--hairline-soft); }
+
+.eld-log-sheet__grid { overflow-x: auto; overflow-y: hidden; }
+.eld-log-sheet__svg { display: block; width: 100%; min-width: 620px; height: auto; }
+
+.eld-log-sheet__remarks { margin-top: var(--s-4); padding-top: var(--s-4); border-top: 1px solid var(--hairline-soft); }
+.eld-log-sheet__remarks-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.eld-log-sheet__remark { display: grid; grid-template-columns: 8px 3.6rem minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); font-size: 0.9375rem; color: var(--ink-1); }
+.eld-log-sheet__remark-swatch { width: 8px; height: 8px; border-radius: 50%; }
+.eld-log-sheet__remark-time { font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink-2); font-size: 0.875rem; }
+.eld-log-sheet__remark-place { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eld-log-sheet__remark-label { color: var(--ink-3); font-size: 0.875rem; text-align: right; }
+
+/* -- PDF export ------------------------------------------------------------ */
+.log-sheet-export { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-3); flex-wrap: wrap; }
+.log-sheet-export__button {
+	padding: 0.4rem 0.9rem; border: 1px solid var(--hairline); border-radius: var(--r-pill);
+	background: var(--surface-card); color: var(--ink-1);
+	font: inherit; font-size: 0.875rem; font-weight: 500; cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.log-sheet-export__button:hover:not(:disabled) { background: var(--surface-sunken); border-color: var(--ink-3); }
+.log-sheet-export__button:disabled { opacity: 0.55; cursor: progress; }
+.log-sheet-export__error { color: var(--status-critical-ink); font-size: 0.8125rem; }
+
+.eld-log-sheet__card.is-exporting { box-shadow: none; }
+.eld-log-sheet__card.is-exporting .eld-log-sheet__grid { overflow: visible; }
+
+/* ==========================================================================
+   Idle / error / loading states
+   ========================================================================== */
+
+.state-card { padding: var(--s-6) var(--s-5); display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-3); }
+.state-card__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-md); font-size: 1.35rem; background: var(--surface-sunken); }
+.state-card__title { margin: var(--s-1) 0 0; font-size: 1.375rem; letter-spacing: -0.025em; }
+.state-card__message { margin: 0; color: var(--ink-2); line-height: 1.5; max-width: 62ch; }
+.state-card__list { margin: var(--s-1) 0 0; padding-left: 1.1rem; color: var(--ink-3); font-size: 0.9375rem; line-height: 1.65; max-width: 62ch; }
+.state-card__detail {
+	margin: var(--s-2) 0 0; padding: var(--s-3) var(--s-4);
+	border-radius: var(--r-md); background: var(--surface-sunken);
+	color: var(--ink-2); font-size: 0.875rem; line-height: 1.5; max-width: 62ch;
+}
+.state-card--error { border-color: rgba(208, 59, 59, 0.28); }
+.state-card--error .state-card__icon { background: rgba(208, 59, 59, 0.1); }
+.state-card--error .state-card__title { color: var(--status-critical-ink); }
+.state-card__list--fields { list-style: none; padding-left: 0; color: var(--ink-1); }
+.state-card__list--fields strong { color: var(--status-critical-ink); font-weight: 600; }
+.state-card__retry {
+	margin-top: var(--s-3); padding: 0.6rem 1.3rem;
+	border: none; border-radius: var(--r-pill);
+	background: var(--accent); color: #fff;
+	font: inherit; font-size: 0.9375rem; font-weight: 500; cursor: pointer;
+}
+.state-card__retry:hover { background: var(--accent-hover); }
+
+.skeleton__card { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-3); }
+.skeleton__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-3); }
+.skeleton__block {
+	border-radius: var(--r-md);
+	background: linear-gradient(90deg, var(--surface-sunken) 25%, #fafafc 37%, var(--surface-sunken) 63%);
+	background-size: 400% 100%;
+	animation: shimmer 1.4s ease-in-out infinite;
+}
+.skeleton__block--eyebrow { height: 11px; width: 140px; }
+.skeleton__block--title { height: 24px; width: 55%; max-width: 320px; }
+.skeleton__block--metric { height: 84px; border-radius: var(--r-lg); }
+.skeleton__block--sheet { height: 120px; border-radius: var(--r-lg); }
+.skeleton__card--map { padding: 0; overflow: hidden; }
+.skeleton__map { height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-3); background: var(--surface-sunken); }
+.skeleton__caption { margin: 0; color: var(--ink-3); font-size: 0.9375rem; text-align: center; padding: 0 var(--s-4); }
+.skeleton__spinner { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--hairline); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+
+@keyframes shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+	.skeleton__block, .skeleton__spinner, .autocomplete__spinner { animation: none; }
+	.skeleton__spinner, .autocomplete__spinner { border-top-color: var(--hairline); }
+	* { transition-duration: 0.01ms !important; }
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
 @media (max-width: 899px) {
-	.trip-form,
-	.trip-summary-card__grid--compact { grid-template-columns: 1fr; }
-	.trip-form button { grid-column: span 1; }
-	.route-map-card__map { height: 400px; min-height: 400px; }
-	.logs-panel { max-height: none; }
-	.hos-status-card__header,
-	.trip-summary-card__header { flex-direction: column; }
-	.hos-status-card__badge { align-self: flex-start; }
+	.home-page { padding: var(--s-6) var(--s-4) var(--s-6); }
+	.trip-form { grid-template-columns: 1fr; }
+	.trip-form__actions { grid-column: span 1; }
+	.route-map-card__map { height: 360px; min-height: 360px; }
+	.hos-status-card__header { flex-direction: column; }
 	.hos-status-card__grid,
 	.trip-summary-card__grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+	.home-page { padding: var(--s-5) var(--s-4); }
+	.eld-log-sheet__card,
+	.hos-status-card,
+	.trip-summary-card,
+	.state-card { padding: var(--s-4); }
+	.eld-log-sheet__total + .eld-log-sheet__total { padding-left: 0; border-left: none; }
+	.eld-log-sheet__totals { gap: var(--s-2) var(--s-4); }
+	/* Drop the activity onto its own line rather than squeezing the city name
+	   down to an ellipsis — this row is the legible fallback for short blocks
+	   that can't carry a caption inside the grid. */
+	.eld-log-sheet__remark { grid-template-columns: 8px 3.6rem minmax(0, 1fr); row-gap: 1px; align-items: baseline; }
+	.eld-log-sheet__remark-place { white-space: normal; overflow: visible; }
+	.eld-log-sheet__remark-label { grid-column: 3; text-align: left; }
 }
