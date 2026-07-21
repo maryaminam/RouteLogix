@@ -1,0 +1,8 @@
+# handled per-subproject too, this is a fallback
+node_modules/
+__pycache__/
+*.pyc
+.env
+db.sqlite3
+staticfiles/
+dist/
