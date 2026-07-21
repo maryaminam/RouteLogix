@@ -1,8 +1,8 @@
 const STATUS_ROWS = [
-  { key: "OFF_DUTY", label: "Off Duty", fill: "#f8fafc", stroke: "#94a3b8", text: "#0f172a" },
-  { key: "SLEEPER_BERTH", label: "Sleeper Berth", fill: "#eef2ff", stroke: "#818cf8", text: "#1e1b4b" },
-  { key: "DRIVING", label: "Driving", fill: "#ecfdf5", stroke: "#10b981", text: "#064e3b" },
-  { key: "ON_DUTY", label: "On Duty", fill: "#fff7ed", stroke: "#f97316", text: "#7c2d12" },
+  { key: "OFF_DUTY", label: "Off Duty", fill: "#f1f5f9", stroke: "#64748b", text: "#0f172a" },
+  { key: "SLEEPER_BERTH", label: "Sleeper Berth", fill: "#f3e8ff", stroke: "#8b5cf6", text: "#3b0764" },
+  { key: "DRIVING", label: "Driving", fill: "#dcfce7", stroke: "#16a34a", text: "#14532d" },
+  { key: "ON_DUTY", label: "On Duty", fill: "#ffedd5", stroke: "#f97316", text: "#7c2d12" },
 ];
 
 const TIME_SCALE = 24 * 60;
@@ -28,6 +28,21 @@ function buildStatusMap() {
   }, {});
 }
 
+function formatDuration(hours) {
+  return `${Number(hours || 0).toFixed(2)} hours`;
+}
+
+function getSegmentTooltip(segment, row) {
+  const title = segment.label || row.label;
+  return [
+    title,
+    `Status: ${row.label}`,
+    `Start: ${segment.start}`,
+    `End: ${segment.end}`,
+    `Duration: ${formatDuration(segment.hours)}`,
+  ].join("\n");
+}
+
 function ELDLogSheetSvg({ log }) {
   const statusMap = buildStatusMap();
   const segments = [...(log.segments || [])].sort(
@@ -38,13 +53,13 @@ function ELDLogSheetSvg({ log }) {
   const height = 420;
   const leftMargin = 160;
   const rightMargin = 28;
-  const topMargin = 70;
+  const topMargin = 78;
   const bottomMargin = 44;
   const chartWidth = width - leftMargin - rightMargin;
   const chartHeight = height - topMargin - bottomMargin;
   const rowHeight = chartHeight / STATUS_ROWS.length;
-  const labelFontSize = 13;
-  const hourFontSize = 11;
+  const labelFontSize = 14;
+  const hourFontSize = 12;
 
   function timeToX(minutes) {
     return leftMargin + (minutes / TIME_SCALE) * chartWidth;
@@ -62,9 +77,21 @@ function ELDLogSheetSvg({ log }) {
       <text x={leftMargin} y="34" fill="#0f172a" fontSize="18" fontWeight="700">
         Day {log.day_number} - {log.date}
       </text>
-      <text x={leftMargin} y="55" fill="#475569" fontSize="12">
+      <text x={leftMargin} y="56" fill="#475569" fontSize="12">
         Driving {log.total_driving_hours}h | On Duty {log.total_on_duty_hours}h | Off Duty {log.total_off_duty_hours}h | Sleeper {log.total_sleeper_berth_hours}h
       </text>
+
+      <g transform={`translate(${leftMargin}, 24)`}>
+        {STATUS_ROWS.map((row, index) => (
+          <g key={row.key} transform={`translate(${index * 132}, 0)`}>
+            <rect x="0" y="0" width="120" height="20" rx="10" fill={row.fill} stroke={row.stroke} />
+            <circle cx="14" cy="10" r="5" fill={row.stroke} />
+            <text x="24" y="14" fill={row.text} fontSize="10" fontWeight="700">
+              {row.label}
+            </text>
+          </g>
+        ))}
+      </g>
 
       <rect
         x={leftMargin}
@@ -83,7 +110,7 @@ function ELDLogSheetSvg({ log }) {
         return (
           <g key={row.key}>
             <rect x="18" y={rowTop} width={leftMargin - 32} height={rowHeight} fill={row.fill} stroke="none" />
-            <text x="30" y={rowMiddle + 5} fill={row.text} fontSize={labelFontSize} fontWeight="600">
+            <text x="30" y={rowMiddle + 5} fill={row.text} fontSize={labelFontSize} fontWeight="700">
               {row.label}
             </text>
             <line
@@ -108,10 +135,17 @@ function ELDLogSheetSvg({ log }) {
               y1={topMargin}
               x2={x}
               y2={topMargin + chartHeight}
-              stroke={hour % 6 === 0 ? "#94a3b8" : "#cbd5e1"}
+              stroke={hour % 6 === 0 ? "#94a3b8" : "#d4d4d8"}
               strokeWidth={hour % 6 === 0 ? "1.5" : "1"}
             />
-            <text x={labelX} y="22" fill="#334155" fontSize={hourFontSize} textAnchor={hour === 24 ? "end" : "middle"}>
+            <text
+              x={labelX}
+              y="22"
+              fill="#1e293b"
+              fontSize={hourFontSize}
+              fontWeight={hour % 6 === 0 ? "700" : "500"}
+              textAnchor={hour === 24 ? "end" : "middle"}
+            >
               {formatHourLabel(hour)}
             </text>
           </g>
@@ -134,7 +168,8 @@ function ELDLogSheetSvg({ log }) {
           transitionX !== null && nextSegment && nextSegment.status !== segment.status && transitionX < leftMargin + chartWidth;
 
         return (
-          <g key={`${segment.start}-${segment.end}-${index}`}>
+          <g key={`${segment.start}-${segment.end}-${index}`} tabIndex="0" aria-label={getSegmentTooltip(segment, row)}>
+            <title>{getSegmentTooltip(segment, row)}</title>
             <rect x={x} y={y} width={w} height={h} rx="7" fill={row.stroke} opacity="0.85" />
             <text x={x + 8} y={y + h / 2 + 4} fill="#ffffff" fontSize="11" fontWeight="700">
               {segment.label || row.label}
@@ -174,7 +209,15 @@ export default function ELDLogSheet({ log, logs }) {
   }
 
   return (
-    <div className="eld-log-sheet">
+    <div className="eld-log-sheet" aria-label="Daily log sheets">
+      <div className="eld-log-sheet__legend" aria-label="Duty status legend">
+        {STATUS_ROWS.map((row) => (
+          <div className="eld-log-sheet__legend-item" key={row.key}>
+            <span className="eld-log-sheet__legend-swatch" style={{ backgroundColor: row.stroke }} aria-hidden="true" />
+            <span>{row.label}</span>
+          </div>
+        ))}
+      </div>
       {sheets.map((sheet) => (
         <section className="eld-log-sheet__card" key={`${sheet.day_number}-${sheet.date}`}>
           <ELDLogSheetSvg log={sheet} />
