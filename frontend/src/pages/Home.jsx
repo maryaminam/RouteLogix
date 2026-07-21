@@ -1,6 +1,7 @@
 import { useState } from "react";
 import TripForm from "../components/TripForm";
 import RouteMap from "../components/RouteMap";
+import TripSummary from "../components/TripSummary";
 import DailyLogSheet from "../components/DailyLogSheet";
 import { planTrip, ApiError } from "../api";
 
@@ -35,6 +36,7 @@ export default function Home() {
 
       {trip && (
         <div className="results">
+          <TripSummary trip={trip} />
           {trip.cycle_summary && (
             <section className="cycle-summary-panel">
               <h2>Cycle check</h2>
