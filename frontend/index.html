@@ -4,7 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ELD Trip Planner</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="RouteLogix plans compliant truck routes and generates FMCSA daily log sheets from hours-of-service rules."
+    />
+    <title>RouteLogix — Route planning and ELD logs</title>
+    <script>
+      // Runs before first paint so a stored dark theme doesn't flash light.
+      // Mirrors ThemeToggle's contract: no attribute means "follow the OS".
+      try {
+        var t = localStorage.getItem("routelogix-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

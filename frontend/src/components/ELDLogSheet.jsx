@@ -5,23 +5,22 @@ import LogSheetPdfButton from "./LogSheetPdfButton";
  * Duty statuses are a categorical scale — identity, not magnitude — so the
  * hues are assigned in a fixed validated order, never by rank.
  *
- * Checked with the dataviz palette validator against the #f5f5f7 grid surface:
- * chroma floor, lightness band, CVD separation (worst adjacent ΔE 9.2 deutan)
- * and normal-vision floor (16.3) all pass. The colours these replace put
- * Driving (#16a34a) and On Duty (#f97316) at ΔE 4.8 under protanopia — a
- * red-green colourblind driver could not tell them apart on their own log.
- * Two slots sit below 3:1 against the surface, so the relief rule applies:
- * every row is direct-labelled and every total is written out in text.
+ * The hex values live in app.css as --duty-* so light and dark can each carry
+ * their own validated step; see that file for the measured figures. The short
+ * version: the colours these replaced put Driving and On Duty at ΔE 4.8 under
+ * protanopia, meaning a red-green colourblind driver could not tell them apart
+ * on their own compliance log.
  */
 const STATUS_ROWS = [
-  { key: "OFF_DUTY", label: "Off Duty", total: "total_off_duty_hours", stroke: "#2a78d6" },
-  { key: "SLEEPER_BERTH", label: "Sleeper Berth", total: "total_sleeper_berth_hours", stroke: "#4a3aa7" },
-  { key: "DRIVING", label: "Driving", total: "total_driving_hours", stroke: "#1baf7a" },
-  { key: "ON_DUTY", label: "On Duty", total: "total_on_duty_hours", stroke: "#eb6834" },
+  { key: "OFF_DUTY", label: "Off Duty", total: "total_off_duty_hours", stroke: "var(--duty-off)" },
+  { key: "SLEEPER_BERTH", label: "Sleeper Berth", total: "total_sleeper_berth_hours", stroke: "var(--duty-sleeper)" },
+  { key: "DRIVING", label: "Driving", total: "total_driving_hours", stroke: "var(--duty-driving)" },
+  { key: "ON_DUTY", label: "On Duty", total: "total_on_duty_hours", stroke: "var(--duty-on)" },
 ];
 
-const INK = { primary: "#1d1d1f", secondary: "#6e6e73", muted: "#707075" };
-const CHART = { surface: "#f5f5f7", gridline: "#e3e3e8", axis: "#c7c7cc" };
+// Painted from CSS custom properties so the grid follows the active theme.
+const INK = { primary: "var(--ink-1)", secondary: "var(--ink-2)", muted: "var(--ink-3)" };
+const CHART = { surface: "var(--chart-surface)", gridline: "var(--chart-gridline)", axis: "var(--chart-axis)" };
 
 const TIME_SCALE = 24 * 60;
 
@@ -156,7 +155,7 @@ function ELDLogSheetSvg({ log }) {
         width={chartWidth}
         height={chartHeight}
         rx="10"
-        fill={CHART.surface}
+        style={{ fill: CHART.surface }}
       />
 
       {STATUS_ROWS.map((row, rowIndex) => {
@@ -166,8 +165,8 @@ function ELDLogSheetSvg({ log }) {
         return (
           <g key={row.key}>
             {/* Swatch + written label: identity never rests on colour alone. */}
-            <rect x="0" y={rowMiddle - 4} width="8" height="8" rx="4" fill={row.stroke} />
-            <text x="18" y={rowMiddle + 5} fill={INK.primary} fontSize={labelFontSize} fontWeight="500">
+            <rect x="0" y={rowMiddle - 4} width="8" height="8" rx="4" style={{ fill: row.stroke }} />
+            <text x="18" y={rowMiddle + 5} style={{ fill: INK.primary }} fontSize={labelFontSize} fontWeight="500">
               {row.label}
             </text>
             {rowIndex > 0 && (
@@ -176,7 +175,7 @@ function ELDLogSheetSvg({ log }) {
                 y1={rowTop}
                 x2={leftMargin + chartWidth}
                 y2={rowTop}
-                stroke={CHART.gridline}
+                style={{ stroke: CHART.gridline }}
                 strokeWidth="1"
               />
             )}
@@ -200,18 +199,17 @@ function ELDLogSheetSvg({ log }) {
               y1={topMargin}
               x2={x}
               y2={topMargin + chartHeight}
-              stroke={isMajor ? CHART.axis : CHART.gridline}
+              style={{ stroke: isMajor ? CHART.axis : CHART.gridline }}
               strokeWidth="1"
             />
             {isLabelled && (
               <text
                 x={x}
                 y={topMargin - 13}
-                fill={isMajor ? INK.secondary : INK.muted}
                 fontSize={hourFontSize}
                 fontWeight={isMajor ? "600" : "400"}
                 textAnchor={anchor}
-                style={{ fontVariantNumeric: "tabular-nums" }}
+                style={{ fontVariantNumeric: "tabular-nums", fill: isMajor ? INK.secondary : INK.muted }}
               >
                 {formatHourLabel(hour)}
               </text>
@@ -253,9 +251,9 @@ function ELDLogSheetSvg({ log }) {
         return (
           <g key={`${segment.start}-${segment.end}-${index}`} tabIndex="0" aria-label={getSegmentTooltip(segment, row)}>
             <title>{getSegmentTooltip(segment, row)}</title>
-            <rect x={x} y={y} width={w} height={h} rx="4" fill={row.stroke} />
+            <rect x={x} y={y} width={w} height={h} rx="4" style={{ fill: row.stroke }} />
             {captionFits && (
-              <text x={x + 10} y={y + h / 2 + 4} fill="#ffffff" fontSize="11" fontWeight="600">
+              <text x={x + 10} y={y + h / 2 + 4} fontSize="11" fontWeight="600" fill="#ffffff">
                 {caption}
               </text>
             )}
@@ -267,7 +265,7 @@ function ELDLogSheetSvg({ log }) {
                 y1={laneCentre(row.index)}
                 x2={transitionX}
                 y2={laneCentre(nextRow.index)}
-                stroke={INK.muted}
+                style={{ stroke: INK.muted }}
                 strokeWidth="1.5"
               />
             )}

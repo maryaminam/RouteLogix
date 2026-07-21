@@ -6,7 +6,16 @@
    this file used to carry.
    ========================================================================== */
 
-:root {
+/* Scoped to any element, not just :root, so a subtree can be forced light —
+   the PDF export stamps data-theme="light" on its off-screen clone. */
+:root,
+[data-theme="light"] {
+	color-scheme: light;
+	/* Re-anchor inherited colour: a forced subtree redefines the variables, but
+	   anything relying on inherited `color` would otherwise keep the outer
+	   theme's already-computed value. */
+	color: var(--ink-1);
+
 	/* -- Ink ------------------------------------------------------------- */
 	/* Contrast measured, not eyeballed. Apple's own #86868b muted grey is only
 	   3.6:1 on white and 3.3:1 on the sunken surface — under WCAG AA for normal
@@ -27,6 +36,7 @@
 	/* -- Accent ---------------------------------------------------------- */
 	--accent: #0071e3;
 	--accent-hover: #0077ed;
+	--accent-on: #ffffff;
 	--accent-quiet: #e8f2fd;
 
 	/* -- Status (reserved; never reused as a series colour) -------------- */
@@ -36,19 +46,28 @@
 	--status-warning-ink: #8a5d00;
 	--status-critical: #d03b3b;
 	--status-critical-ink: #b3261e;
+	--status-on: #ffffff;
 
 	/* -- Duty status, categorical -----------------------------------------
-	   Validated with the dataviz palette checker against the #f5f5f7 grid
-	   surface: chroma floor, lightness band, CVD separation (worst adjacent
-	   ΔE 9.2 deutan) and normal-vision floor (16.3) all pass. The previous
-	   green/orange pair measured ΔE 4.8 for protanopes — indistinguishable
-	   for red-green colourblind readers, on a compliance document.
-	   Contrast sits under 3:1 for two slots, so the relief rule applies:
-	   every row is direct-labelled and every total is written out. */
+	   Validated with the dataviz palette checker in BOTH modes against each
+	   mode's own grid surface — the dark column is the same four hues
+	   re-stepped for the dark band, never an inversion of the light one.
+	     light (#f5f5f7): worst adjacent CVD ΔE 9.1 protan, normal-vision 22.9
+	     dark  (#2c2c2e): worst adjacent CVD ΔE 8.4 protan, normal-vision 19.8
+	   Blue sits opposite orange so the costliest confusion — Off Duty against
+	   On Duty — is the furthest apart pair on the sheet. Light contrast is
+	   under 3:1 for three slots, so the relief rule applies: every lane is
+	   direct-labelled, every total written out, every change listed in
+	   Remarks. */
 	--duty-off: #2a78d6;
-	--duty-sleeper: #4a3aa7;
+	--duty-sleeper: #eda100;
 	--duty-driving: #1baf7a;
 	--duty-on: #eb6834;
+
+	/* Chart chrome */
+	--chart-surface: #f5f5f7;
+	--chart-gridline: #e3e3e8;
+	--chart-axis: #c7c7cc;
 
 	/* -- Radii ----------------------------------------------------------- */
 	--r-sm: 8px;
@@ -72,6 +91,96 @@
 
 	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
 		"Inter Variable", "Inter", "Segoe UI Variable Display", "Segoe UI", Roboto, sans-serif;
+}
+
+/* --------------------------------------------------------------------------
+   Dark mode — selected, not inverted.
+   Every value below was chosen for the dark surface and measured against it:
+   the duty hues are re-stepped into the dark lightness band and re-validated,
+   and each ink clears 4.5:1 on the darkest surface it is used on.
+
+   Declared under both scopes so the OS setting applies by default while an
+   explicit choice on <html data-theme> wins in either direction.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+
+		--ink-1: #f5f5f7;   /* 15.5:1 on card, 12.8:1 on sunken */
+		--ink-2: #a1a1a6;   /*  6.5:1 on card,  5.4:1 on sunken */
+		--ink-3: #98989d;   /*  5.9:1 on card,  4.9:1 on sunken */
+
+		--surface-page: #000000;
+		--surface-card: #1d1d1f;
+		--surface-sunken: #2c2c2e;
+		--hairline: #48484a;
+		--hairline-soft: #38383a;
+
+		--accent: #2997ff;
+		--accent-hover: #47a5ff;
+		--accent-on: #00224d;
+		--accent-quiet: #10314f;
+
+		--status-good: #30d158;
+		--status-good-ink: #30d158;
+		--status-warning: #ffd60a;
+		--status-warning-ink: #ffd60a;
+		--status-critical: #ff453a;
+		--status-critical-ink: #ff6961;
+		--status-on: #1d1d1f;
+
+		--duty-off: #3987e5;
+		--duty-sleeper: #c98500;
+		--duty-driving: #199e70;
+		--duty-on: #d95926;
+
+		--chart-surface: #2c2c2e;
+		--chart-gridline: #3a3a3c;
+		--chart-axis: #545458;
+
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+		--shadow-md: 0 4px 20px rgba(0, 0, 0, 0.6);
+	}
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	color: var(--ink-1);
+
+	--ink-1: #f5f5f7;
+	--ink-2: #a1a1a6;
+	--ink-3: #98989d;
+
+	--surface-page: #000000;
+	--surface-card: #1d1d1f;
+	--surface-sunken: #2c2c2e;
+	--hairline: #48484a;
+	--hairline-soft: #38383a;
+
+	--accent: #2997ff;
+	--accent-hover: #47a5ff;
+	--accent-on: #00224d;
+	--accent-quiet: #10314f;
+
+	--status-good: #30d158;
+	--status-good-ink: #30d158;
+	--status-warning: #ffd60a;
+	--status-warning-ink: #ffd60a;
+	--status-critical: #ff453a;
+	--status-critical-ink: #ff6961;
+	--status-on: #1d1d1f;
+
+	--duty-off: #3987e5;
+	--duty-sleeper: #c98500;
+	--duty-driving: #199e70;
+	--duty-on: #d95926;
+
+	--chart-surface: #2c2c2e;
+	--chart-gridline: #3a3a3c;
+	--chart-axis: #545458;
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+	--shadow-md: 0 4px 20px rgba(0, 0, 0, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -112,7 +221,33 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 
 .home-page { max-width: 1120px; margin: 0 auto; padding: var(--s-7) var(--s-5) var(--s-7); }
 
-.home-page > header { margin-bottom: var(--s-6); }
+/* -- Masthead -------------------------------------------------------------- */
+.masthead { margin-bottom: var(--s-6); }
+.masthead__bar { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-6); }
+.masthead__mark {
+	display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto;
+	border-radius: 10px; background: var(--ink-1); color: var(--surface-card);
+}
+.masthead__mark svg { width: 21px; height: 21px; }
+.masthead__wordmark { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.02em; color: var(--ink-1); }
+
+/* Segmented control, Apple-style. */
+.theme-toggle {
+	margin-left: auto; display: inline-flex; gap: 2px; padding: 2px;
+	background: var(--surface-sunken); border-radius: var(--r-pill);
+	border: 1px solid var(--hairline-soft);
+}
+.theme-toggle__option {
+	display: inline-flex; align-items: center; gap: 0.35rem;
+	padding: 0.3rem 0.7rem; border: none; border-radius: var(--r-pill);
+	background: transparent; color: var(--ink-2);
+	font: inherit; font-size: 0.8125rem; font-weight: 500; cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.theme-toggle__option:hover { color: var(--ink-1); }
+.theme-toggle__option.is-active { background: var(--surface-card); color: var(--ink-1); box-shadow: var(--shadow-sm); }
+.theme-toggle__label { display: inline; }
+
 .home-page > header h1 {
 	margin: 0 0 var(--s-2);
 	font-size: clamp(2.25rem, 5vw, 3.25rem);
@@ -181,7 +316,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 	box-shadow: 0 0 0 4px var(--accent-quiet);
 }
 .trip-form input[aria-invalid="true"] { border-color: var(--status-critical); }
-.trip-form input[aria-invalid="true"]:focus { box-shadow: 0 0 0 4px rgba(208, 59, 59, 0.12); }
+.trip-form input[aria-invalid="true"]:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-critical) 18%, transparent); }
 
 .field-error { color: var(--status-critical-ink); font-size: 0.8125rem; font-weight: 400; line-height: 1.35; }
 
@@ -194,7 +329,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 	border: none;
 	border-radius: var(--r-pill);
 	background: var(--accent);
-	color: #fff;
+	color: var(--accent-on);
 	font: inherit;
 	font-size: 1rem;
 	font-weight: 500;
@@ -203,7 +338,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 }
 .trip-form button[type="submit"]:hover:not(:disabled) { background: var(--accent-hover); }
 .trip-form button[type="submit"]:active:not(:disabled) { transform: scale(0.98); }
-.trip-form button[type="submit"]:disabled { background: var(--hairline); color: #fff; cursor: not-allowed; }
+.trip-form button[type="submit"]:disabled { background: var(--hairline); color: var(--surface-card); cursor: not-allowed; }
 
 /* ==========================================================================
    Location autocomplete
@@ -253,7 +388,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 .hos-status-card__badge {
 	display: grid; place-items: center; flex: 0 0 auto;
 	width: 44px; height: 44px; border-radius: 50%;
-	font-size: 1.25rem; font-weight: 700; color: #fff;
+	font-size: 1.25rem; font-weight: 700; color: var(--status-on);
 	background: var(--status-good);
 }
 .hos-status-card--warning .hos-status-card__badge { background: var(--status-warning); color: var(--ink-1); }
@@ -303,7 +438,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 
 .route-marker {
 	display: grid !important; place-items: center; color: #fff; border-radius: 50%;
-	border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+	border: 2px solid var(--surface-card); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 	font-size: 0.75rem; font-weight: 700;
 }
 .route-marker span { display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
@@ -327,7 +462,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 
 .eld-log-sheet__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-5); }
 .eld-log-sheet__ident { min-width: 0; }
-.eld-log-sheet__date { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }
+.eld-log-sheet__date { margin: 0; color: var(--ink-1); font-size: 1.25rem; letter-spacing: -0.02em; }
 
 /* Doubles as the chart legend: swatch + written label + value, so status
    identity never rests on colour alone. */
@@ -378,15 +513,15 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 	border-radius: var(--r-md); background: var(--surface-sunken);
 	color: var(--ink-2); font-size: 0.875rem; line-height: 1.5; max-width: 62ch;
 }
-.state-card--error { border-color: rgba(208, 59, 59, 0.28); }
-.state-card--error .state-card__icon { background: rgba(208, 59, 59, 0.1); }
+.state-card--error { border-color: color-mix(in srgb, var(--status-critical) 40%, transparent); }
+.state-card--error .state-card__icon { background: color-mix(in srgb, var(--status-critical) 14%, transparent); }
 .state-card--error .state-card__title { color: var(--status-critical-ink); }
 .state-card__list--fields { list-style: none; padding-left: 0; color: var(--ink-1); }
 .state-card__list--fields strong { color: var(--status-critical-ink); font-weight: 600; }
 .state-card__retry {
 	margin-top: var(--s-3); padding: 0.6rem 1.3rem;
 	border: none; border-radius: var(--r-pill);
-	background: var(--accent); color: #fff;
+	background: var(--accent); color: var(--accent-on);
 	font: inherit; font-size: 0.9375rem; font-weight: 500; cursor: pointer;
 }
 .state-card__retry:hover { background: var(--accent-hover); }
@@ -395,7 +530,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 .skeleton__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-3); }
 .skeleton__block {
 	border-radius: var(--r-md);
-	background: linear-gradient(90deg, var(--surface-sunken) 25%, #fafafc 37%, var(--surface-sunken) 63%);
+	background: linear-gradient(90deg, var(--surface-sunken) 25%, color-mix(in srgb, var(--surface-sunken) 55%, var(--surface-card)) 37%, var(--surface-sunken) 63%);
 	background-size: 400% 100%;
 	animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -433,6 +568,9 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
 
 @media (max-width: 560px) {
 	.home-page { padding: var(--s-5) var(--s-4); }
+	/* Glyph-only theme control — the labels are what overflow first. */
+	.theme-toggle__label { display: none; }
+	.theme-toggle__option { padding: 0.35rem 0.6rem; }
 	.eld-log-sheet__card,
 	.hos-status-card,
 	.trip-summary-card,

@@ -30,6 +30,10 @@ async function withExportClone(source, capture) {
   const holder = document.createElement("div");
   holder.setAttribute("aria-hidden", "true");
   holder.style.cssText = `position:absolute;top:0;left:-100000px;width:${EXPORT_WIDTH}px;`;
+  // Always export the light theme: this sheet gets printed and filed, and a
+  // dark one would flood the page with ink and read wrong in a binder. The
+  // stamp scopes the light tokens to the clone, leaving the live page alone.
+  holder.setAttribute("data-theme", "light");
 
   const clone = source.cloneNode(true);
   clone.classList.add("is-exporting");

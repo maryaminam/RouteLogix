@@ -7,6 +7,7 @@ import DailyLogSheet from "../components/DailyLogSheet";
 import EmptyState from "../components/EmptyState";
 import ErrorState from "../components/ErrorState";
 import ResultsSkeleton from "../components/ResultsSkeleton";
+import ThemeToggle from "../components/ThemeToggle";
 import { planTrip, ApiError, ERROR_KIND } from "../api";
 
 // The results area is always in exactly one of these.
@@ -50,9 +51,26 @@ export default function Home() {
 
   return (
     <div className="home-page">
-      <header>
-        <h1>ELD Trip Planner</h1>
-        <p>Plan a route and auto-generate compliant daily log sheets.</p>
+      <header className="masthead">
+        <div className="masthead__bar">
+          <span className="masthead__mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 17h4M16 17h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="10" cy="17" r="2.4" stroke="currentColor" strokeWidth="2" />
+              <circle cx="18" cy="17" r="2.4" stroke="currentColor" strokeWidth="2" />
+              <path d="M3 17V8h9v9M12 11h4l3 3.2V17" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="masthead__wordmark">RouteLogix</span>
+          <ThemeToggle />
+        </div>
+
+        <h1>Every mile, already logged.</h1>
+        <p>
+          Plan a route, and RouteLogix applies the hours-of-service rules as it goes — breaks,
+          resets and fuel stops placed for you, with a compliant FMCSA log sheet for every day
+          of the trip.
+        </p>
       </header>
 
       <TripForm onSubmit={planTripFor} loading={status === STATUS.LOADING} />
