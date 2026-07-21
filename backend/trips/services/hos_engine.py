@@ -48,6 +48,8 @@ class HOSEngine:
     def __init__(self, ruleset: dict, start_time: datetime, cycle_used_hours: float):
         self.r = ruleset
         self.segments: list[Segment] = []
+        self.starting_cycle_used = cycle_used_hours
+        self.restart_count = 0
         self.clock = DriverClock(duty_window_start=start_time, cycle_used=cycle_used_hours)
         self.now = start_time
 
@@ -70,13 +72,15 @@ class HOSEngine:
         # OFF_DUTY / SLEEPER_BERTH accrue no driving/duty hours
 
     def _take_reset(self, hours: float, restart_cycle: bool):
-        status = "OFF_DUTY"
-        self._add(status, hours, label=f"{hours:g}-hour reset")
+        status = self.r.get("RESET_STATUS", "SLEEPER_BERTH")
+        label = "34-hour restart" if restart_cycle else f"{hours:g}-hour reset"
+        self._add(status, hours, label=label)
         self.clock.driving_today = 0
         self.clock.driving_since_break = 0
         self.clock.duty_window_start = self.now
         if restart_cycle:
             self.clock.cycle_used = 0
+            self.restart_count += 1
 
     def _duty_window_elapsed(self) -> float:
         return (self.now - self.clock.duty_window_start).total_seconds() / 3600
@@ -161,6 +165,24 @@ class HOSEngine:
         self._add("ON_DUTY", r["DROPOFF_DURATION_HOURS"], label="Drop-off")
 
         return self.segments
+
+    def get_summary(self) -> dict:
+        max_cycle_hours = self.r["MAX_CYCLE_HOURS"]
+        total_cycle_hours_used = sum(
+            segment.hours for segment in self.segments if segment.status in {"DRIVING", "ON_DUTY"}
+        )
+        cycle_after_trip = self.clock.cycle_used
+
+        return {
+            "current_cycle_used_hours": round(self.starting_cycle_used, 2),
+            "remaining_cycle_hours_before_trip": round(max(0, max_cycle_hours - self.starting_cycle_used), 2),
+            "cycle_hours_used_during_trip": round(total_cycle_hours_used, 2),
+            "cycle_after_trip_hours": round(cycle_after_trip, 2),
+            "remaining_cycle_hours_after_trip": round(max(0, max_cycle_hours - cycle_after_trip), 2),
+            "restart_required": self.restart_count > 0,
+            "restart_count": self.restart_count,
+            "reset_status": self.r.get("RESET_STATUS", "SLEEPER_BERTH"),
+        }
 
 
 def plan_trip(ruleset: dict, start_time: datetime, cycle_used_hours: float,

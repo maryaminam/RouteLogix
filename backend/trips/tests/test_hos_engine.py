@@ -3,6 +3,7 @@ from django.test import SimpleTestCase
 from django.conf import settings
 
 from trips.services.hos_engine import plan_trip
+from trips.services.hos_engine import HOSEngine
 from trips.services.daily_split import split_into_days
 
 
@@ -44,6 +45,13 @@ class HOSEngineTests(SimpleTestCase):
         self.assertTrue(reset_seen)
         self.assertLessEqual(driving_day_one, 11 + 1e-6)
 
+    def test_reset_period_uses_sleeper_berth_by_default(self):
+        segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,
+                              total_driving_hours=15, distance_miles=825)
+        reset_segments = [s for s in segments if s.label == "10-hour reset"]
+        self.assertTrue(reset_segments)
+        self.assertTrue(all(s.status == "SLEEPER_BERTH" for s in reset_segments))
+
     def test_total_driving_hours_conserved(self):
         total_requested = 20
         segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,
@@ -55,8 +63,19 @@ class HOSEngineTests(SimpleTestCase):
         # Start already at 68 of 70 hours used -> should hit cycle limit almost immediately
         segments = plan_trip(self.ruleset, self.start, cycle_used_hours=68,
                               total_driving_hours=10, distance_miles=550)
-        long_resets = [s.hours for s in segments if s.status == "OFF_DUTY" and s.hours >= 34]
+        long_resets = [s.hours for s in segments if s.status == "SLEEPER_BERTH" and s.hours >= 34]
         self.assertTrue(long_resets, "Expected a 34-hour restart when cycle limit is nearly exhausted")
+
+    def test_cycle_summary_reports_remaining_cycle_and_restart_flag(self):
+        engine = HOSEngine(self.ruleset, self.start, cycle_used_hours=10)
+        engine.plan(total_driving_hours=4, distance_miles=220)
+
+        summary = engine.get_summary()
+        self.assertEqual(summary["current_cycle_used_hours"], 10)
+        self.assertEqual(summary["remaining_cycle_hours_before_trip"], 60)
+        self.assertFalse(summary["restart_required"])
+        self.assertEqual(summary["cycle_after_trip_hours"], 16)
+        self.assertEqual(summary["remaining_cycle_hours_after_trip"], 54)
 
     def test_daily_split_totals_24_hours_per_day_except_last(self):
         segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,

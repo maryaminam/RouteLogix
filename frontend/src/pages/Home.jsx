@@ -35,6 +35,29 @@ export default function Home() {
 
       {trip && (
         <div className="results">
+          {trip.cycle_summary && (
+            <section className="cycle-summary-panel">
+              <h2>Cycle check</h2>
+              <div className="cycle-summary-grid">
+                <div>
+                  <span>Remaining cycle</span>
+                  <strong>{trip.cycle_summary.remaining_cycle_hours_before_trip}h before / {trip.cycle_summary.remaining_cycle_hours_after_trip}h after</strong>
+                </div>
+                <div>
+                  <span>Cycle after trip</span>
+                  <strong>{trip.cycle_summary.cycle_after_trip_hours}h</strong>
+                </div>
+                <div>
+                  <span>Restart</span>
+                  <strong>{trip.cycle_summary.restart_required ? "Required" : "Not required"}</strong>
+                </div>
+                <div>
+                  <span>Reset status</span>
+                  <strong>{trip.cycle_summary.reset_status === "SLEEPER_BERTH" ? "Sleeper Berth" : trip.cycle_summary.reset_status}</strong>
+                </div>
+              </div>
+            </section>
+          )}
           <div className="map-panel">
             <RouteMap geometry={trip.route_geometry} stops={trip.stops} />
           </div>

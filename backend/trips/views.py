@@ -9,7 +9,7 @@ from .serializers import TripRequestSerializer, TripSerializer
 from .models import Trip, LogSheet
 from .services.geocoding import geocode, GeocodingError
 from .services.routing import get_route, RoutingError
-from .services.hos_engine import plan_trip
+from .services.hos_engine import HOSEngine
 from .services.daily_split import split_into_days
 
 
@@ -42,10 +42,12 @@ class TripPlanView(APIView):
         except RoutingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        segments = plan_trip(
+        engine = HOSEngine(
             ruleset=settings.HOS_RULESET,
             start_time=datetime.now().replace(second=0, microsecond=0),
             cycle_used_hours=data["current_cycle_used_hours"],
+        )
+        segments = engine.plan(
             total_driving_hours=route["duration_hours"],
             distance_miles=route["distance_miles"],
         )
@@ -65,6 +67,8 @@ class TripPlanView(APIView):
                 {"type": "dropoff", **dropoff},
             ],
         )
+
+        trip.planning_summary = engine.get_summary()
 
         for day in days:
             LogSheet.objects.create(
