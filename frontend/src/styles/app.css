@@ -19,7 +19,9 @@ header h1 { margin-bottom: 0.25rem; }
 .map-panel { height: 480px; border-radius: 12px; overflow: hidden; background: #fff; }
 .map-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #888; }
 .logs-panel { display: flex; flex-direction: column; gap: 1rem; max-height: 480px; overflow-y: auto; }
-.log-sheet-placeholder { background: #fff; padding: 1rem; border-radius: 12px; font-size: 0.8rem; }
+.eld-log-sheet { display: flex; flex-direction: column; gap: 1rem; }
+.eld-log-sheet__card { background: #fff; padding: 0.9rem; border-radius: 16px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); overflow: hidden; }
+.eld-log-sheet__svg { display: block; width: 100%; height: auto; }
 
 @media (min-width: 900px) {
 	.results { grid-template-columns: 1.2fr 1fr; }
