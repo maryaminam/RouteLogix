@@ -1,11 +1,8 @@
 # ELD Trip Planner
 
-Full-stack app that takes trip details (current location, pickup, dropoff,
-current 70hr/8day cycle hours used) and outputs:
-
-1. A map of the route with stops (pickup, dropoff, fuel, rests).
-2. FMCSA-style daily log sheets (Driver's Daily Log grid), auto-filled,
-   split across multiple days for longer trips.
+A real-world commercial driver cannot simply drive non-stop from point A to point B. This application serves as an automated dispatcher and safety compliance officer by taking simple trip inputs; Current Location, Pickup Location, Dropoff Location, and Current Cycle Used (Hours) and producing two critical outputs:  
+1. An Interactive Route Map: Visually displaying the full path along with specific waypoints for pickup, dropoff, mandatory 30-minute rest breaks, 10-hour overnight sleeps, and fueling stops.  
+2. Automated Daily Log Sheets: Generating accurate 24-hour FMCSA graph grids (Off Duty, Sleeper Berth, Driving, On Duty Not Driving) for every day of the trip, complete with duty-status change remarks and daily hour recaps. 
 
 Built with **Django REST Framework** (backend) + **React/Vite** (frontend).
 
