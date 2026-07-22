@@ -1,2 +1,8 @@
-web: gunicorn config.wsgi --log-file - --timeout 120
-release: python manage.py migrate --noinput && python manage.py collectstatic --noinput
+Update backend/Procfile: remove the "release: python manage.py migrate"
+line entirely (Render doesn't execute Procfile release phases — this
+line has never run). Replace the web line with:
+web: python manage.py migrate && gunicorn config.wsgi --log-file -
+Commit and push so the repo matches what's actually configured in
+Render's dashboard, and add a one-line note in README.md's deployment
+section: "Render does not support Procfile release phases; migrations
+run automatically as part of the web start command instead."
