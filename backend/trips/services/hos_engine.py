@@ -21,6 +21,25 @@ unit tested in isolation.
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+# Every limit below is compared with a tolerance rather than exactly. The
+# simulation repeatedly does `counter += limit - counter`, which in binary
+# floating point can land a few ULPs *short* of the limit. Comparing exactly
+# meant "have I hit the 70-hour cycle?" could answer no at 69.999999999, so the
+# engine would neither restart the cycle nor be able to drive — and would spin
+# taking 10-hour rests forever. These tolerances are far below the resolution of
+# anything a log sheet records (a minute), so they cannot mask a real violation.
+TIME_EPSILON_HOURS = 1e-6      # 3.6 milliseconds
+DISTANCE_EPSILON_MILES = 1e-3  # 5 feet
+
+# Guards against any future no-progress branch turning into a hung request.
+# A legitimate plan needs a handful of iterations per driving day; a cross
+# country trip on a nearly exhausted cycle stays comfortably under a thousand.
+MAX_SIMULATION_STEPS = 100_000
+
+
+class HOSPlanningError(Exception):
+    """The simulation could not make forward progress — always a bug here."""
+
 
 @dataclass
 class Segment:
@@ -67,6 +86,13 @@ class HOSEngine:
         self._miles_before_leg = 0.0  # total mileage of all legs already completed
         self.miles_per_driving_hour = ruleset["AVERAGE_DRIVING_SPEED_MPH"]  # per-leg, set in _drive()
 
+        # Distance since the tank was last filled. Tracked as its own running
+        # counter rather than derived from `miles_driven % FUEL_INTERVAL_MILES`:
+        # the modulo silently skipped a stop whenever a leg happened to end on a
+        # fuel boundary, because the remainder reset to zero at the same moment
+        # the "take the stop" branch was suppressed for having no driving left.
+        self.miles_since_fuel = 0.0
+
     # -- internal helpers ----------------------------------------------------
 
     @property
@@ -88,10 +114,23 @@ class HOSEngine:
             self.clock.driving_today += hours
             self.clock.driving_since_break += hours
             self.clock.cycle_used += hours
-            self.miles_into_leg += hours * self.miles_per_driving_hour
-        elif status == "ON_DUTY":
+            miles = hours * self.miles_per_driving_hour
+            self.miles_into_leg += miles
+            self.miles_since_fuel += miles
+            return
+
+        if status == "ON_DUTY":
             self.clock.cycle_used += hours
-        # OFF_DUTY / SLEEPER_BERTH accrue no driving/duty hours
+        # OFF_DUTY / SLEEPER_BERTH accrue no driving/duty hours.
+
+        # § 395.3(a)(3)(ii) lets the 30-minute break be taken on duty, off duty
+        # or in the sleeper berth, and says ordinary interruptions to driving —
+        # fuelling, loading, paperwork — satisfy it provided they are
+        # consecutive. So any single non-driving block long enough counts, not
+        # just the break we insert deliberately. Without this the engine bolted
+        # a redundant 30-minute break onto the far side of an hour-long pickup.
+        if hours >= self.r["REQUIRED_BREAK_MINUTES"] / 60 - TIME_EPSILON_HOURS:
+            self.clock.driving_since_break = 0
 
     def _take_reset(self, hours: float, restart_cycle: bool):
         status = self.r.get("RESET_STATUS", "SLEEPER_BERTH")
@@ -129,63 +168,65 @@ class HOSEngine:
             else r["AVERAGE_DRIVING_SPEED_MPH"]
         )
 
-        while driving_remaining > 1e-6:
+        # Each branch below either clears the constraint that blocked driving or
+        # drives, so every iteration makes progress. The counter only catches a
+        # future edit that breaks that property, and turns what used to be a hung
+        # worker into an exception.
+        for _ in range(MAX_SIMULATION_STEPS):
+            if driving_remaining <= TIME_EPSILON_HOURS:
+                return
+
             # Hard stop: cycle limit reached -> must restart (34 consecutive hrs off)
-            if self.clock.cycle_used >= r["MAX_CYCLE_HOURS"]:
+            if self.clock.cycle_used >= r["MAX_CYCLE_HOURS"] - TIME_EPSILON_HOURS:
                 self._take_reset(r["RESTART_HOURS"], restart_cycle=True)
                 continue
 
             # Daily driving or duty-window limit reached -> 10hr off-duty reset
             if (
-                self.clock.driving_today >= r["MAX_DRIVING_HOURS"]
-                or self._duty_window_elapsed() >= r["MAX_DUTY_WINDOW_HOURS"]
+                self.clock.driving_today >= r["MAX_DRIVING_HOURS"] - TIME_EPSILON_HOURS
+                or self._duty_window_elapsed() >= r["MAX_DUTY_WINDOW_HOURS"] - TIME_EPSILON_HOURS
             ):
                 self._take_reset(r["REQUIRED_OFF_DUTY_HOURS"], restart_cycle=False)
                 continue
 
             # 30-minute break required after 8 cumulative driving hours
-            if self.clock.driving_since_break >= r["DRIVING_BREAK_TRIGGER_HOURS"]:
+            if self.clock.driving_since_break >= r["DRIVING_BREAK_TRIGGER_HOURS"] - TIME_EPSILON_HOURS:
                 self._add(
                     "OFF_DUTY",
                     r["REQUIRED_BREAK_MINUTES"] / 60,
                     label="Required 30-minute break",
                 )
-                self.clock.driving_since_break = 0
                 continue
 
-            # Fuel stop every FUEL_INTERVAL_MILES
-            next_fuel_at = r["FUEL_INTERVAL_MILES"] - (self.miles_driven % r["FUEL_INTERVAL_MILES"])
-            miles_to_next_fuel = next_fuel_at if next_fuel_at > 0 else r["FUEL_INTERVAL_MILES"]
+            # Fuel stop every FUEL_INTERVAL_MILES. Taken at the top of the loop
+            # rather than after driving, so a stop that comes due exactly at a
+            # leg boundary is honoured on entering the next leg instead of being
+            # dropped: the driver still has to fill up before carrying on.
+            if self.miles_since_fuel >= r["FUEL_INTERVAL_MILES"] - DISTANCE_EPSILON_MILES:
+                self._add("ON_DUTY", r["FUEL_STOP_DURATION_HOURS"], label="Fuel stop")
+                self.miles_since_fuel = 0.0
+                continue
 
             # How much driving time is available before hitting each constraint?
-            hrs_to_driving_limit = r["MAX_DRIVING_HOURS"] - self.clock.driving_today
-            hrs_to_window_limit = r["MAX_DUTY_WINDOW_HOURS"] - self._duty_window_elapsed()
-            hrs_to_break = r["DRIVING_BREAK_TRIGGER_HOURS"] - self.clock.driving_since_break
-            hrs_to_cycle_limit = r["MAX_CYCLE_HOURS"] - self.clock.cycle_used
-            hrs_to_fuel = miles_to_next_fuel / self.miles_per_driving_hour
-            hrs_to_finish = driving_remaining
-
+            # Every one of these is strictly positive: the guards above have
+            # already dealt with each constraint that could be at zero.
+            miles_to_next_fuel = r["FUEL_INTERVAL_MILES"] - self.miles_since_fuel
             drive_chunk = min(
-                hrs_to_driving_limit,
-                hrs_to_window_limit,
-                hrs_to_break,
-                hrs_to_cycle_limit,
-                hrs_to_fuel,
-                hrs_to_finish,
+                r["MAX_DRIVING_HOURS"] - self.clock.driving_today,
+                r["MAX_DUTY_WINDOW_HOURS"] - self._duty_window_elapsed(),
+                r["DRIVING_BREAK_TRIGGER_HOURS"] - self.clock.driving_since_break,
+                r["MAX_CYCLE_HOURS"] - self.clock.cycle_used,
+                miles_to_next_fuel / self.miles_per_driving_hour,
+                driving_remaining,
             )
-            drive_chunk = max(drive_chunk, 0)
-
-            if drive_chunk <= 1e-6:
-                # Safety valve against infinite loops if two constraints tie at 0
-                self._take_reset(r["REQUIRED_OFF_DUTY_HOURS"], restart_cycle=False)
-                continue
 
             self._add("DRIVING", drive_chunk, label="Driving")
             driving_remaining -= drive_chunk
 
-            # If we just hit the fuel threshold exactly, take the fuel stop
-            if abs((self.miles_driven % r["FUEL_INTERVAL_MILES"])) < 1e-3 and driving_remaining > 1e-6:
-                self._add("ON_DUTY", r["FUEL_STOP_DURATION_HOURS"], label="Fuel stop")
+        raise HOSPlanningError(
+            f"HOS simulation failed to finish a leg within {MAX_SIMULATION_STEPS} "
+            f"steps ({driving_remaining:.6f}h of driving still unplanned)."
+        )
 
     def _advance_to_next_leg(self, leg: dict):
         """Moves the position marker onto the start of the following leg."""

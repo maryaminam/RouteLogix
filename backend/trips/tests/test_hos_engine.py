@@ -201,6 +201,124 @@ class HOSEngineTests(SimpleTestCase):
         for day in days:
             self.assertLessEqual(day["totals"]["DRIVING"], day_ceiling + 1e-6)
 
+    def test_nearly_exhausted_cycle_completes_instead_of_spinning(self):
+        """
+        A cycle balance a hair under the limit used to wedge the simulation.
+
+        `cycle_used` is repeatedly advanced by `MAX_CYCLE_HOURS - cycle_used`,
+        which in floating point can settle a few ULPs short of 70. The engine
+        then found no driving time available (0 hours to the cycle limit) but
+        also refused to restart the cycle, because 69.999999999 >= 70 is false.
+        Its infinite-loop guard responded with a 10-hour reset, which changes
+        neither quantity — so it looped, emitting rests until the datetime
+        overflowed past year 9999. In production that pins a worker at 100% CPU
+        until gunicorn times it out.
+        """
+        segments = plan_trip(self.ruleset, self.start,
+                             cycle_used_hours=70 - 1e-9, legs=route_legs(10, 550))
+
+        restarts = [s for s in segments if s.hours >= self.ruleset["RESTART_HOURS"] - 1e-9]
+        self.assertTrue(restarts, "An exhausted cycle must be cleared by a 34-hour restart")
+        self.assertAlmostEqual(
+            sum(s.hours for s in segments if s.status == "DRIVING"), 10, places=2)
+
+    def test_fuel_stop_survives_a_leg_ending_on_the_fuel_interval(self):
+        """
+        The pickup landing exactly on a fuel boundary used to cancel the stop.
+
+        Mileage-to-next-fuel was derived as `miles_driven % FUEL_INTERVAL`, and
+        the stop was only taken when driving remained *in the current leg*. When
+        leg one ended on the boundary both conditions fired at once: the stop was
+        suppressed for having no driving left, and the remainder reset to zero,
+        so the next boundary was pushed out a further full interval. A 1,500-mile
+        trip came out with no fuel stop at all.
+        """
+        interval = self.ruleset["FUEL_INTERVAL_MILES"]
+        total_miles = 1.5 * interval
+        legs = route_legs(total_miles / 55, total_miles,
+                          pickup_at=interval / total_miles)
+        self.assertAlmostEqual(legs[0]["distance_miles"], interval, places=6)
+
+        segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0, legs=legs)
+
+        self.assertEqual(
+            sum(1 for s in segments if s.label == "Fuel stop"), 1,
+            "A 1,500-mile trip needs a fuel stop even when the pickup falls on "
+            "the 1,000-mile mark.",
+        )
+
+    def test_no_stretch_of_the_trip_runs_past_the_fuel_interval(self):
+        interval = self.ruleset["FUEL_INTERVAL_MILES"]
+
+        for total_miles in (900, 1000, 1500, 2000, 2500, 3300):
+            for pickup_at in (0.05, interval / total_miles if total_miles > interval else 0.5, 0.5, 0.9):
+                if not 0 < pickup_at < 1:
+                    continue
+                legs = route_legs(total_miles / 55, total_miles, pickup_at=pickup_at)
+                segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0, legs=legs)
+
+                miles_before_leg = [0.0, legs[0]["distance_miles"]]
+                marks = [0.0]
+                marks += [miles_before_leg[s.leg_index] + s.miles_into_leg
+                          for s in segments if s.label == "Fuel stop"]
+                marks.append(total_miles)
+
+                worst = max(b - a for a, b in zip(marks, marks[1:]))
+                self.assertLessEqual(
+                    worst, interval + 1e-3,
+                    f"{total_miles}mi trip with pickup at {pickup_at:.3f} drove "
+                    f"{worst:.1f}mi between fuel stops.",
+                )
+
+    def test_hour_long_pickup_satisfies_the_30_minute_break(self):
+        """
+        § 395.3(a)(3)(ii): the break may be taken on duty, and routine work
+        interruptions count so long as they are consecutive. An hour spent
+        loading is one. The engine used to only credit the break it inserted
+        itself, so it bolted a redundant one on shortly after every pickup.
+        """
+        # 7.5h to the shipper, then 3h to the consignee: 10.5h driving inside a
+        # 12.5h window, so nothing but the pickup can clear the break counter.
+        segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,
+                             legs=route_legs(10.5, 577.5, pickup_at=7.5 / 10.5))
+
+        self.assertEqual(
+            [s.label for s in segments if "break" in s.label.lower()], [],
+            "The hour-long pickup already interrupted driving; no separate "
+            "30-minute break should be scheduled.",
+        )
+        # Still a legal plan: the break rule is satisfied, not skipped.
+        driving_runs = []
+        run = 0.0
+        for s in segments:
+            if s.status == "DRIVING":
+                run += s.hours
+            elif s.hours >= self.ruleset["REQUIRED_BREAK_MINUTES"] / 60:
+                driving_runs.append(run)
+                run = 0.0
+        driving_runs.append(run)
+        self.assertLessEqual(max(driving_runs), self.ruleset["DRIVING_BREAK_TRIGGER_HOURS"] + 1e-6)
+
+    def test_log_sheets_contain_no_zero_length_status_changes(self):
+        """
+        A duty status is drawn and totalled to the minute. A segment shorter
+        than that renders as a zero-width mark on the grid and adds a remark
+        naming a town the driver never stopped in.
+        """
+        interval = self.ruleset["FUEL_INTERVAL_MILES"]
+        # Ending a whisker past a fuel stop is what produces the sliver.
+        total_miles = interval + 0.001
+        segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,
+                             legs=route_legs(total_miles / 55, total_miles))
+
+        for day in split_into_days(segments):
+            for entry in day["segments"]:
+                self.assertGreater(
+                    entry["hours"], 0,
+                    f"Day {day['day_number']} logs a {entry['label']!r} of "
+                    f"{entry['hours']}h at {entry['start']}.",
+                )
+
     def test_pickup_happens_after_driving_to_the_shipper(self):
         segments = plan_trip(self.ruleset, self.start, cycle_used_hours=0,
                               legs=route_legs(6, 330))

@@ -22,6 +22,9 @@ end of a rest period, a fuel stop, a 30-minute break — into a single lookup.
 
 import logging
 
+from django.conf import settings
+from django.core.cache import cache
+
 from .geocoding import reverse_geocode, GeocodingError
 from .routing import cumulative_distances, point_at_fraction
 
@@ -82,12 +85,23 @@ class RouteLocator:
         if key in self._cache:
             return self._cache[key]
 
-        try:
-            place = reverse_geocode(lat, lng)
-            remark = place["city_state"]
-        except GeocodingError as exc:
-            logger.warning("Could not reverse geocode (%s, %s): %s", lat, lng, exc)
-            remark = ""
+        # Then the shared cache, which outlives this request. Every trip down a
+        # given interstate stops in the same handful of towns, so this is what
+        # keeps a long trip from spending its whole request budget in the 1.1s
+        # throttle. Rounded coordinates make the key naturally shareable.
+        shared_key = f"reverse-geocode:{key[0]}:{key[1]}"
+        remark = cache.get(shared_key)
+
+        if remark is None:
+            try:
+                remark = reverse_geocode(lat, lng)["city_state"]
+            except GeocodingError as exc:
+                logger.warning("Could not reverse geocode (%s, %s): %s", lat, lng, exc)
+                # Don't cache a failure — it's usually a transient rate limit,
+                # and caching it would blank this town's remark for a whole day.
+                self._cache[key] = ""
+                return ""
+            cache.set(shared_key, remark, settings.REVERSE_GEOCODE_CACHE_SECONDS)
 
         self._cache[key] = remark
         return remark

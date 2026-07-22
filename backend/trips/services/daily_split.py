@@ -8,9 +8,32 @@ Any segment crossing midnight is cut into two pieces, one per day.
 from datetime import datetime, timedelta
 from .hos_engine import Segment
 
-
 def _midnight_after(dt: datetime) -> datetime:
     return datetime(dt.year, dt.month, dt.day) + timedelta(days=1)
+
+
+def _clock(dt: datetime) -> str:
+    return dt.strftime("%H:%M")
+
+
+def _end_clock(start: datetime, end: datetime) -> str:
+    """Midnight closing a day reads as 24:00, not 00:00 of the next one."""
+    return "24:00" if end.hour == 0 and end.minute == 0 and end > start else _clock(end)
+
+
+def _is_invisible(start: datetime, end: datetime) -> bool:
+    """
+    True when a piece is too short for the grid to express.
+
+    The log is drawn and totalled to the minute, so a piece whose start and end
+    fall in the same minute has nowhere to be drawn: it renders as a zero-width
+    mark yet still contributes a remark naming a town the driver drove straight
+    through. These come from a constraint landing a fraction of a mile from the
+    end of a leg — a fuel stop falling just short of the drop-off, say. Dropping
+    them costs under a minute of the day's total, well inside the two decimal
+    places the totals are reported to.
+    """
+    return _clock(start) == _end_clock(start, end)
 
 
 def split_into_days(segments: list[Segment], locate=None) -> list[dict]:
@@ -60,13 +83,13 @@ def split_into_days(segments: list[Segment], locate=None) -> list[dict]:
     def _append(status, start, end, label="", remark=""):
         nonlocal current_segments, totals
         hours = (end - start).total_seconds() / 3600
-        if hours <= 0:
+        if hours <= 0 or _is_invisible(start, end):
             return
         current_segments.append({
             "status": status,
             "label": label,
-            "start": start.strftime("%H:%M"),
-            "end": "24:00" if end.hour == 0 and end.minute == 0 and end > start else end.strftime("%H:%M"),
+            "start": _clock(start),
+            "end": _end_clock(start, end),
             "hours": round(hours, 2),
             "remark": remark,
         })
@@ -106,16 +129,17 @@ def split_into_days(segments: list[Segment], locate=None) -> list[dict]:
                     _append("OFF_DUTY", new_day_start, seg_start, label="Off duty")
 
             hours = (piece_end - seg_start).total_seconds() / 3600
-            current_segments.append({
-                "status": seg.status,
-                "label": seg.label,
-                "start": seg_start.strftime("%H:%M"),
-                "end": piece_end.strftime("%H:%M") if piece_end.hour != 0 or piece_end.minute != 0 or piece_end == seg_start else "24:00",
-                "hours": round(hours, 2),
-                "remark": pending_remark,
-            })
-            totals[seg.status] += hours
-            pending_remark = ""
+            if hours > 0 and not _is_invisible(seg_start, piece_end):
+                current_segments.append({
+                    "status": seg.status,
+                    "label": seg.label,
+                    "start": _clock(seg_start),
+                    "end": _end_clock(seg_start, piece_end),
+                    "hours": round(hours, 2),
+                    "remark": pending_remark,
+                })
+                totals[seg.status] += hours
+                pending_remark = ""
 
             seg_start = piece_end
 

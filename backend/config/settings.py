@@ -148,6 +148,14 @@ LOCATION_SEARCH_CACHE_SECONDS = config("LOCATION_SEARCH_CACHE_SECONDS", default=
 # anywhere (useful for cross-border runs).
 LOCATION_SEARCH_COUNTRY_CODES = config("LOCATION_SEARCH_COUNTRY_CODES", default="us")
 
+# Log-sheet remarks reverse-geocode every duty-status change, and the throttle
+# above makes each miss cost about a second of request time. Towns don't move,
+# and trips down the same interstate stop in the same places, so these are held
+# far longer than they are likely to change.
+REVERSE_GEOCODE_CACHE_SECONDS = config(
+    "REVERSE_GEOCODE_CACHE_SECONDS", default=60 * 60 * 24 * 30, cast=int
+)
+
 HOS_RULESET = {
     "MAX_DRIVING_HOURS": 11,
     "MAX_DUTY_WINDOW_HOURS": 14,
