@@ -31,6 +31,16 @@ A full-stack trip planner for property-carrying truck drivers. Given a current l
    matching the official Driver's Daily Log layout, with a cycle-hours summary
    (used before/after trip, remaining, whether a restart was required) and a
    downloadable PDF per day.
+   
+<img width="1871" height="652" alt="image" src="https://github.com/user-attachments/assets/6c5b22b5-7c55-4b8c-8eb0-bf6772ac525e" />
+
+<img width="1518" height="857" alt="image" src="https://github.com/user-attachments/assets/01070d5a-8f5c-495f-a040-944e78a58689" />
+
+<img width="1257" height="846" alt="image" src="https://github.com/user-attachments/assets/8869a012-4ab9-414a-ba67-a7e66dea8a7b" />
+
+<img width="1277" height="848" alt="image" src="https://github.com/user-attachments/assets/ab79e4df-1d60-4524-9910-4ee184f83453" />
+
+
 
 ---
 
