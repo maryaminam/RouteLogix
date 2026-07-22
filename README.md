@@ -3,8 +3,6 @@
 A full-stack trip planner for property-carrying truck drivers. Given a current location, pickup, dropoff, and hours already used in the driver's 70-hour/8-day cycle, it plans the route, simulates FMCSA Hours-of-Service rules over the trip, and generates filled-out, FMCSA-style daily driver's log sheets.
 
 **Live app:** https://route-logix-topaz.vercel.app
-**API:** https://routelogix.onrender.com/api/health/
-**Repo:** https://github.com/maryaminam/RouteLogix
 
 > Built with Django REST Framework (backend) + React/Vite (frontend).
 
