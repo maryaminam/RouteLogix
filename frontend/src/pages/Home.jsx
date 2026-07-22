@@ -67,7 +67,7 @@ export default function Home() {
 
         <h1>Every mile, already logged.</h1>
         <p>
-          Plan a route, and RouteLogix applies the hours-of-service rules as it goes — breaks,
+          Plan a route, and RouteLogix applies the hours-of-service rules as it goes; breaks,
           resets and fuel stops placed for you, with a compliant FMCSA log sheet for every day
           of the trip.
         </p>
