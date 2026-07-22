@@ -1,6 +1,22 @@
+import zoneinfo
+from functools import lru_cache
+
 from django.conf import settings
 from rest_framework import serializers
 from .models import Trip, LogSheet
+
+
+@lru_cache(maxsize=1)
+def _available_timezones() -> frozenset:
+    """
+    Every IANA zone name this host knows.
+
+    Cached because available_timezones() walks the whole tz database each call,
+    which is far too much work to repeat per request just to validate a string.
+    The set is fixed for the life of the process — a tzdata upgrade ships in a
+    new release anyway.
+    """
+    return frozenset(zoneinfo.available_timezones())
 
 
 class TripRequestSerializer(serializers.Serializer):
@@ -10,6 +26,27 @@ class TripRequestSerializer(serializers.Serializer):
     pickup_location = serializers.CharField(max_length=255)
     dropoff_location = serializers.CharField(max_length=255)
     current_cycle_used_hours = serializers.FloatField(min_value=0, max_value=70)
+    # § 395.8 requires every log time to be recorded in the home terminal's time
+    # zone. The browser's detected zone stands in for it — see README.
+    home_terminal_timezone = serializers.CharField(max_length=64)
+
+    def validate_home_terminal_timezone(self, value):
+        """
+        Rejects anything ZoneInfo can't resolve.
+
+        The name reaches us from the browser and is fed straight to
+        ZoneInfo(), which raises ZoneInfoNotFoundError on an unknown key — an
+        unhandled 500 rather than a 400 telling the caller what was wrong. It
+        also decides which local midnight splits the log into days, so a
+        plausible-looking but wrong zone would silently shift every sheet.
+        """
+        name = value.strip()
+        if name not in _available_timezones():
+            raise serializers.ValidationError(
+                f"{name!r} is not a recognised IANA time zone name "
+                f"(expected something like 'America/Chicago')."
+            )
+        return name
 
 
 class LogSheetSerializer(serializers.ModelSerializer):

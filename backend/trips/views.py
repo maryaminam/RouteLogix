@@ -1,5 +1,6 @@
 import hashlib
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.cache import cache
@@ -45,9 +46,15 @@ class TripPlanView(APIView):
         except RoutingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
+        # § 395.8(d): a log's 24-hour period runs on home terminal time, whatever
+        # zones the driver crosses. Planning from the server's clock instead put
+        # the day boundary at UTC midnight, so a driver starting at 6pm Pacific
+        # saw their log day roll over at 4pm local. The zone is validated by the
+        # serializer, so ZoneInfo() cannot raise here.
+        home_terminal = ZoneInfo(data["home_terminal_timezone"])
         engine = HOSEngine(
             ruleset=settings.HOS_RULESET,
-            start_time=datetime.now().replace(second=0, microsecond=0),
+            start_time=datetime.now(home_terminal).replace(second=0, microsecond=0),
             cycle_used_hours=data["current_cycle_used_hours"],
         )
         segments = engine.plan(route["legs"])

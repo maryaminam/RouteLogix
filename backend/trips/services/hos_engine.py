@@ -19,7 +19,7 @@ unit tested in isolation.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Every limit below is compared with a tolerance rather than exactly. The
 # simulation repeatedly does `counter += limit - counter`, which in binary
@@ -41,6 +41,45 @@ class HOSPlanningError(Exception):
     """The simulation could not make forward progress — always a bug here."""
 
 
+def advance(moment: datetime, hours: float) -> datetime:
+    """
+    Moves `moment` forward by a real elapsed duration.
+
+    Adding a timedelta to a zone-aware datetime adjusts its *wall clock* fields
+    and leaves the zone attached, so the result is re-interpreted at whatever
+    UTC offset then applies. Across a spring-forward that turns a 10-hour rest
+    into 9 real hours of sleep — an illegal short rest that the log would
+    nonetheless display as compliant. Every duration the engine deals in is a
+    real elapsed one, so the arithmetic is done in UTC and converted back.
+
+    Naive datetimes have no offset to shift and are handled directly, which is
+    what keeps the engine usable without a timezone.
+    """
+    if moment.tzinfo is None:
+        return moment + timedelta(hours=hours)
+    shifted = moment.astimezone(timezone.utc) + timedelta(hours=hours)
+    return shifted.astimezone(moment.tzinfo)
+
+
+def elapsed_hours(start: datetime, end: datetime) -> float:
+    """
+    Real hours between two moments.
+
+    Subtracting datetimes that share a tzinfo object gives the difference in
+    *wall clock* fields, with the offset deliberately ignored — and ZoneInfo
+    hands out one cached instance per zone name, so every datetime the engine
+    produces shares one. Plain subtraction therefore reports a rest spanning the
+    spring-forward as 11 hours when the driver slept 10, and one spanning the
+    fall-back as 9 when they slept 10. Both directions corrupt HOS accounting,
+    the second by hiding a qualifying rest. Converting to UTC removes the
+    offset from the comparison.
+    """
+    if start.tzinfo is not None and end.tzinfo is not None:
+        start = start.astimezone(timezone.utc)
+        end = end.astimezone(timezone.utc)
+    return (end - start).total_seconds() / 3600
+
+
 @dataclass
 class Segment:
     status: str  # "OFF_DUTY" | "SLEEPER_BERTH" | "DRIVING" | "ON_DUTY"
@@ -58,7 +97,7 @@ class Segment:
 
     @property
     def hours(self) -> float:
-        return (self.end - self.start).total_seconds() / 3600
+        return elapsed_hours(self.start, self.end)
 
 
 @dataclass
@@ -104,7 +143,7 @@ class HOSEngine:
         if hours <= 0:
             return
         start = self.now
-        end = start + timedelta(hours=hours)
+        end = advance(start, hours)
         self.segments.append(
             Segment(status, start, end, label, self.leg_index, self.miles_into_leg)
         )
@@ -144,7 +183,7 @@ class HOSEngine:
             self.restart_count += 1
 
     def _duty_window_elapsed(self) -> float:
-        return (self.now - self.clock.duty_window_start).total_seconds() / 3600
+        return elapsed_hours(self.clock.duty_window_start, self.now)
 
     def _drive_leg(self, leg: dict):
         """

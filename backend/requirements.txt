@@ -5,3 +5,14 @@ python-decouple>=3.8
 gunicorn>=22.0
 requests>=2.32
 whitenoise>=6.7
+dj-database-url>=2.2
+# dj-database-url only builds the settings dict; the database still needs a
+# driver. Without one Django raises "Error loading psycopg2 or psycopg module"
+# the first time it opens a connection, so the release command's migrate fails
+# and the deploy rolls back. Unused on sqlite, which is built into Python.
+psycopg[binary]>=3.1.8
+# Log day boundaries and duty-hour arithmetic resolve IANA zone names through
+# zoneinfo, which falls back to the operating system's tz database. Slim Linux
+# images routinely ship without one, and every plan request would then be
+# rejected as an unknown time zone. Pinned so the data travels with the app.
+tzdata>=2024.1

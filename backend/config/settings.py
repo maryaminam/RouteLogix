@@ -3,17 +3,73 @@ Django settings for the ELD Trip Planner project.
 """
 
 from pathlib import Path
+
+import dj_database_url
 from decouple import config, Csv
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Core / security
 # ---------------------------------------------------------------------------
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-key-change-me")
+DEV_SECRET_KEY = "django-insecure-dev-key-change-me"
+SECRET_KEY = config("SECRET_KEY", default=DEV_SECRET_KEY)
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="127.0.0.1,localhost", cast=Csv())
+
+# This key signs session cookies, password-reset tokens and CSRF tokens, and its
+# development value is committed to the repository. Booting production with it
+# would let anyone holding a copy of this repo forge any of them. A missing
+# SECRET_KEY is otherwise silent — the default simply applies — so refuse to
+# start rather than serve traffic that only looks secure.
+if not DEBUG and SECRET_KEY == DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is still the development default while DEBUG is off. Set "
+        "SECRET_KEY in the environment to a fresh random value; generate one "
+        "with:\n"
+        "  python -c \"from django.core.management.utils import "
+        "get_random_secret_key; print(get_random_secret_key())\""
+    )
+
+# ---------------------------------------------------------------------------
+# Production hardening
+#
+# Gated on DEBUG so local development over plain HTTP keeps working: with
+# SECURE_SSL_REDIRECT on, runserver would bounce every request to an https port
+# that isn't listening, and the Secure cookie flags would stop the session and
+# CSRF cookies being stored at all.
+#
+# Each is overridable from the environment for the case where the platform's
+# edge already does the job, or does it differently.
+# ---------------------------------------------------------------------------
+if not DEBUG:
+    # Render (like Heroku and Railway) terminates TLS at its edge and forwards
+    # plain HTTP internally, so Django sees an insecure request and would
+    # redirect it to https for ever — an infinite loop that takes the whole site
+    # down the moment SECURE_SSL_REDIRECT is switched on. This header is how the
+    # proxy reports the browser's original scheme.
+    #
+    # It is only safe because that edge overwrites X-Forwarded-Proto on every
+    # request. Running without such a proxy would let a client set the header
+    # itself and claim a plain HTTP request was secure, so drop this line if you
+    # ever move somewhere the app is exposed directly.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+    SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
+    SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=True, cast=bool)
+
+    # One year, the minimum the browser preload lists accept. HSTS is sticky:
+    # browsers refuse plain HTTP for this domain for the full duration and there
+    # is no way to call it back early, so serve HTTPS correctly on every
+    # subdomain before raising it from a smaller trial value.
+    SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=31536000, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+        "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True, cast=bool
+    )
+    SECURE_HSTS_PRELOAD = config("SECURE_HSTS_PRELOAD", default=True, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Applications
@@ -66,11 +122,22 @@ WSGI_APPLICATION = "config.wsgi.application"
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
+# Reads DATABASE_URL from the environment, falling back to the local sqlite file
+# so development needs no configuration. Render supplies DATABASE_URL for a
+# provisioned Postgres instance, which is what switches this over.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR}/db.sqlite3",
+        # Reuse a connection for ten minutes instead of opening one per request.
+        # Postgres connections are expensive to establish, and on Render the
+        # database is a network hop away.
+        conn_max_age=600,
+        # Necessary companion to conn_max_age: a pooled connection can be closed
+        # from the far end while Django still believes it is open — by a database
+        # restart, or the idle timeout on Render's free tier. Without a health
+        # check the next request to inherit that connection fails outright.
+        conn_health_checks=True,
+    )
 }
 
 # ---------------------------------------------------------------------------

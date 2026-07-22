@@ -1,12 +1,25 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from django.test import SimpleTestCase
 from django.conf import settings
 
-from trips.services.hos_engine import plan_trip
+from trips.services.hos_engine import plan_trip, advance, elapsed_hours
 from trips.services.hos_engine import HOSEngine
-from trips.services.daily_split import split_into_days
+from trips.services.daily_split import split_into_days, _clock
 from trips.services.route_locations import RouteLocator
 from trips.services.routing import cumulative_distances, split_geometry_by_waypoints
+from trips.serializers import TripRequestSerializer
+
+# The suite runs on a real home terminal zone rather than naive datetimes, so
+# the day-splitting and duty arithmetic are exercised the way production uses
+# them. Chicago observes DST, which is what makes the transitions below testable.
+HOME_TZ = ZoneInfo("America/Chicago")
+
+
+def at(year, month, day, hour=0, minute=0, tz=HOME_TZ):
+    """A wall-clock moment at the home terminal."""
+    return datetime(year, month, day, hour, minute, tzinfo=tz)
 
 
 def route_legs(total_driving_hours, distance_miles, pickup_at=0.1):
@@ -72,7 +85,7 @@ def densify(start, end, steps):
 class HOSEngineTests(SimpleTestCase):
     def setUp(self):
         self.ruleset = settings.HOS_RULESET
-        self.start = datetime(2026, 1, 1, 6, 0)
+        self.start = at(2026, 1, 1, 6, 0)
 
     def test_short_trip_single_day_no_reset(self):
         # 4 hours of driving, fresh cycle -> should fit in one day, no resets.
@@ -164,7 +177,7 @@ class HOSEngineTests(SimpleTestCase):
 
         # Starting at midnight packs the most driving into day 1: a full window,
         # a full reset, and the start of the next window all land on one date.
-        segments = plan_trip(self.ruleset, datetime(2026, 3, 2, 0, 0),
+        segments = plan_trip(self.ruleset, at(2026, 3, 2, 0, 0),
                              cycle_used_hours=0, legs=route_legs(26, 1430))
         days = split_into_days(segments)
 
@@ -328,6 +341,183 @@ class HOSEngineTests(SimpleTestCase):
         self.assertEqual(labels[-1], "Drop-off")
 
 
+class HomeTerminalTimezoneTests(SimpleTestCase):
+    """
+    § 395.8(d): every time on a log is recorded in the home terminal's zone,
+    whatever zones the driver crosses. That decides where each 24-hour sheet
+    begins, so the planner has to simulate on home terminal wall time.
+
+    US DST transitions used below (2026): clocks spring forward on Sunday
+    8 March and fall back on Sunday 1 November, both at 02:00 local.
+    """
+
+    def setUp(self):
+        self.ruleset = settings.HOS_RULESET
+
+    def test_log_days_break_at_home_terminal_midnight_not_utc(self):
+        # 20:00 in Chicago is already 02:00 the next day in UTC. Splitting on
+        # UTC midnight would date this sheet a day late and cut it in the
+        # middle of the driver's evening.
+        start = at(2026, 1, 5, 20, 0)
+        days = split_into_days(
+            plan_trip(self.ruleset, start, cycle_used_hours=0, legs=route_legs(4, 220))
+        )
+
+        self.assertEqual(days[0]["date"], start.date())
+        first = days[0]["segments"][0]
+        self.assertEqual(first["start"], "00:00")
+        self.assertEqual(first["status"], "OFF_DUTY")
+        # ...and the day's activity starts on the driver's clock, not UTC's.
+        first_activity = next(s for s in days[0]["segments"] if s["status"] != "OFF_DUTY")
+        self.assertEqual(first_activity["start"], "20:00")
+
+    def test_segments_stay_in_the_home_terminal_zone(self):
+        start = at(2026, 6, 1, 9, 0)
+        for segment in plan_trip(self.ruleset, start, cycle_used_hours=0,
+                                 legs=route_legs(15, 825)):
+            self.assertEqual(segment.start.tzinfo, HOME_TZ)
+            self.assertEqual(segment.end.tzinfo, HOME_TZ)
+
+    def test_rest_across_spring_forward_is_ten_real_hours(self):
+        """
+        Adding a timedelta to a zone-aware datetime moves the wall clock, not
+        the instant. Ten hours added across the spring-forward would leave the
+        driver nine real hours of rest while the log still read ten — a short
+        rest that looks compliant on paper.
+        """
+        before_transition = at(2026, 3, 7, 22, 0)
+        rest_end = advance(before_transition, 10)
+
+        self.assertAlmostEqual(elapsed_hours(before_transition, rest_end), 10, places=9)
+        # The wall clock must show 11 hours passing, because one was skipped.
+        self.assertEqual(rest_end.hour, 9)
+        self.assertEqual(rest_end.utcoffset(), timedelta(hours=-5))  # now CDT
+        # Plain subtraction is what this guards against: both operands share the
+        # one cached ZoneInfo instance, so Python compares wall clocks and calls
+        # a legal ten-hour rest eleven hours.
+        self.assertEqual((rest_end - before_transition).total_seconds() / 3600, 11)
+
+    def test_rest_across_fall_back_is_ten_real_hours(self):
+        before_transition = at(2026, 10, 31, 22, 0)
+        rest_end = advance(before_transition, 10)
+
+        self.assertAlmostEqual(elapsed_hours(before_transition, rest_end), 10, places=9)
+        # An hour repeats, so ten real hours only advance the clock to 07:00.
+        self.assertEqual(rest_end.hour, 7)
+        self.assertEqual(rest_end.utcoffset(), timedelta(hours=-6))  # back to CST
+        # The dangerous direction: naive subtraction reports 9 hours, so a
+        # qualifying rest stops counting as one and two duty windows merge.
+        self.assertEqual((rest_end - before_transition).total_seconds() / 3600, 9)
+
+    def test_every_duty_period_stays_legal_across_a_dst_transition(self):
+        """The limits are on elapsed time, so a clock change must not relax them."""
+        for label, start in (("spring forward", at(2026, 3, 7, 6, 0)),
+                             ("fall back", at(2026, 10, 31, 6, 0))):
+            segments = plan_trip(self.ruleset, start, cycle_used_hours=0,
+                                 legs=route_legs(30, 1650))
+
+            windows = driving_hours_per_duty_window(segments, self.ruleset)
+            self.assertLessEqual(
+                max(windows), self.ruleset["MAX_DRIVING_HOURS"] + 1e-6,
+                f"{label}: a duty window drove {max(windows):.3f}h",
+            )
+            for segment in segments:
+                if segment.label.endswith("reset"):
+                    self.assertGreaterEqual(
+                        segment.hours, self.ruleset["REQUIRED_OFF_DUTY_HOURS"] - 1e-6,
+                        f"{label}: a reset was only {segment.hours:.3f} real hours",
+                    )
+
+    def test_dst_day_totals_23_or_25_hours(self):
+        """
+        A calendar day containing a clock change is genuinely 23 or 25 hours
+        long, and the log sheet for it should say so rather than being padded
+        to a fictional 24.
+        """
+        for start, transition_date, expected in (
+            (at(2026, 3, 7, 6, 0), datetime(2026, 3, 8).date(), 23),
+            (at(2026, 10, 31, 6, 0), datetime(2026, 11, 1).date(), 25),
+        ):
+            days = split_into_days(
+                plan_trip(self.ruleset, start, cycle_used_hours=0, legs=route_legs(40, 2200))
+            )
+            day = next((d for d in days if d["date"] == transition_date), None)
+            self.assertIsNotNone(day, f"No log sheet covering {transition_date}")
+            self.assertAlmostEqual(sum(day["totals"].values()), expected, places=1)
+
+        # Ordinary days are unaffected.
+        days = split_into_days(
+            plan_trip(self.ruleset, at(2026, 6, 1, 6, 0), 0, route_legs(40, 2200))
+        )
+        for day in days[:-1]:
+            self.assertAlmostEqual(sum(day["totals"].values()), 24, places=1)
+
+    def test_duty_spanning_the_repeated_hour_keeps_its_time(self):
+        """
+        On the day the clocks go back, 01:00-02:00 local happens twice. A duty
+        period inside it starts and ends on the same clock reading — an
+        hour-long pickup running 01:16 CDT to 01:16 CST. Treating equal
+        readings as zero-length deleted the hour from the sheet, so the day
+        totalled 24 instead of 25 and the driver's cycle was understated.
+        """
+        # 34 hours of restart from this start lands the pickup inside the
+        # repeated hour on 1 November.
+        segments = plan_trip(self.ruleset, at(2026, 10, 30, 13, 0),
+                             cycle_used_hours=68,
+                             legs=route_legs(2500 / 55, 2500, pickup_at=0.05))
+        pickup = next(s for s in segments if s.label == "Pickup")
+        self.assertEqual(_clock(pickup.start), _clock(pickup.end),
+                         "This scenario is meant to straddle the repeated hour")
+        self.assertAlmostEqual(pickup.hours, 1, places=6)
+
+        day = next(d for d in split_into_days(segments)
+                   if d["date"] == datetime(2026, 11, 1).date())
+        logged = next((e for e in day["segments"] if e["label"] == "Pickup"), None)
+        self.assertIsNotNone(logged, "The pickup vanished from the log sheet")
+        self.assertAlmostEqual(logged["hours"], 1, places=2)
+        self.assertAlmostEqual(sum(day["totals"].values()), 25, places=1)
+
+    def test_naive_datetimes_still_plan(self):
+        """The engine stays usable without a zone, which the unit tests rely on."""
+        segments = plan_trip(self.ruleset, datetime(2026, 1, 1, 6, 0),
+                             cycle_used_hours=0, legs=route_legs(15, 825))
+        self.assertTrue(split_into_days(segments))
+        self.assertIsNone(segments[0].start.tzinfo)
+
+
+class TimezoneValidationTests(SimpleTestCase):
+    def _payload(self, **overrides):
+        return {
+            "current_location": "Denver, CO",
+            "pickup_location": "Omaha, NE",
+            "dropoff_location": "Chicago, IL",
+            "current_cycle_used_hours": 10,
+            "home_terminal_timezone": "America/Chicago",
+            **overrides,
+        }
+
+    def test_accepts_a_real_iana_zone(self):
+        serializer = TripRequestSerializer(data=self._payload())
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["home_terminal_timezone"], "America/Chicago")
+
+    def test_rejects_unknown_or_malformed_zones(self):
+        # "CST" and a UTC offset are the shapes a caller is most likely to send
+        # by mistake; ZoneInfo would raise on each, which without validation
+        # surfaces as a 500 rather than a field error.
+        for bad in ("Mars/Olympus_Mons", "CST", "UTC+5", "", "   "):
+            serializer = TripRequestSerializer(data=self._payload(home_terminal_timezone=bad))
+            self.assertFalse(serializer.is_valid(), f"{bad!r} should be rejected")
+            self.assertIn("home_terminal_timezone", serializer.errors)
+
+    def test_timezone_is_required(self):
+        payload = self._payload()
+        del payload["home_terminal_timezone"]
+        serializer = TripRequestSerializer(data=payload)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("home_terminal_timezone", serializer.errors)
+
+
 class RemarkLocationTests(SimpleTestCase):
     """
     The log-sheet remarks are only useful if the interpolated position of a
@@ -338,7 +528,7 @@ class RemarkLocationTests(SimpleTestCase):
 
     def setUp(self):
         self.ruleset = settings.HOS_RULESET
-        self.start = datetime(2026, 1, 1, 6, 0)
+        self.start = at(2026, 1, 1, 6, 0)
 
         # Denver -> Omaha -> Chicago, far enough apart that naming the wrong one
         # is unmistakable.

@@ -70,6 +70,25 @@ function toApiError(body, status) {
   });
 }
 
+/**
+ * The IANA zone this browser is running in, e.g. "America/Chicago".
+ *
+ * FMCSA logs record every time in the driver's home terminal zone, so the
+ * planner needs one to decide where each 24-hour log sheet begins. We take the
+ * browser's zone as a stand-in: a driver planning a trip is overwhelmingly
+ * likely to be doing it on home terminal time.
+ *
+ * Falls back to UTC only if the runtime won't report a zone, which keeps a
+ * request from failing validation over a detail the user never entered.
+ */
+export function detectTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 export async function planTrip({ currentLocation, pickupLocation, dropoffLocation, currentCycleUsedHours }) {
   let response;
   try {
@@ -81,6 +100,7 @@ export async function planTrip({ currentLocation, pickupLocation, dropoffLocatio
         pickup_location: pickupLocation,
         dropoff_location: dropoffLocation,
         current_cycle_used_hours: Number(currentCycleUsedHours),
+        home_terminal_timezone: detectTimezone(),
       }),
     });
   } catch {
